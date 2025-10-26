@@ -73,12 +73,18 @@ async def db_middleware(handler, event, data):
 # Helper function to run async code in sync context
 def run_async(coro):
     """Run async coroutine in sync context"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+        # Try to get the existing event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("Event loop is closed")
+    except RuntimeError:
+        # Create a new event loop if none exists or if it's closed
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Run the coroutine
+    return loop.run_until_complete(coro)
 
 # Initialize database
 async def init_db():
