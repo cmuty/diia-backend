@@ -4,4 +4,5 @@ echo Starting Diia Telegram Bot...
 echo.
 
 python -m bot.bot
+pause
 

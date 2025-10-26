@@ -11,9 +11,6 @@ import os
 import re
 import aiohttp
 import asyncio
-from io import BytesIO
-
-from bot.utils.photo_upload import upload_photo_to_cloudinary
 
 router = Router()
 
