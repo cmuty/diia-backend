@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python render_server.py
+    startCommand: gunicorn render_server:flask_app
     envVars:
       - key: BOT_TOKEN
         sync: false
