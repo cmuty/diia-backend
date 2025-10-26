@@ -1,10 +1,9 @@
 """
 FastAPI Server for iOS App Authentication
 """
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -45,7 +44,6 @@ app.include_router(admin_router)
 async def startup():
     """Initialize database on startup"""
     os.makedirs("database", exist_ok=True)
-    os.makedirs("uploads/photos", exist_ok=True)
     await db.init_db()
 
 
@@ -113,8 +111,13 @@ async def get_user_data(login: str):
     if not user:
         raise HTTPException(status_code=404, detail="Користувач не знайдений")
     
+<<<<<<< HEAD
     # photo_path now contains Cloudinary URL
     photo_url = user.get('photo_path')
+=======
+    # Construct photo URL if exists
+    photo_url = user.get('photo_url')
+>>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
     
     return UserDataResponse(
         full_name=user['full_name'],
@@ -136,11 +139,16 @@ async def get_user_photo(user_id: int):
     
     user = await db.get_user_by_id(user_id)
     
-    if not user or not user.get('photo_path'):
+    if not user or not user.get('photo_url'):
         raise HTTPException(status_code=404, detail="Фото не знайдено")
+<<<<<<< HEAD
     
     # Redirect to Cloudinary URL
     return RedirectResponse(url=user['photo_path'])
+=======
+
+    return RedirectResponse(user['photo_url'])
+>>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
 
 
 @app.get("/api/health")
