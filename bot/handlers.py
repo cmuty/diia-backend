@@ -1131,3 +1131,7 @@ async def cmd_cancel(message: Message, state: FSMContext, db):
         "❌ Реєстрація скасована.\n\n"
         "Використовуйте /menu для повернення в головне меню."
     )
+
+
+
+# Clean version - no merge conflicts
