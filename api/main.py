@@ -139,16 +139,11 @@ async def get_user_photo(user_id: int):
     
     user = await db.get_user_by_id(user_id)
     
-    if not user or not user.get('photo_url'):
+    if not user or not user.get('photo_path'):
         raise HTTPException(status_code=404, detail="Фото не знайдено")
-<<<<<<< HEAD
     
     # Redirect to Cloudinary URL
     return RedirectResponse(url=user['photo_path'])
-=======
-
-    return RedirectResponse(user['photo_url'])
->>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
 
 
 @app.get("/api/health")

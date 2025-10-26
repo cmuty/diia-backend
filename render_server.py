@@ -122,12 +122,8 @@ async def api_get_user(login):
         if not user:
             return jsonify({"error": "Користувач не знайдений"}), 404
         
-<<<<<<< HEAD
         # photo_path now contains Cloudinary URL
         photo_url = user.get('photo_path')
-=======
-        photo_url = user.get('photo_url')
->>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
         
         return jsonify({
             "full_name": user['full_name'],
