@@ -432,3 +432,4 @@ class Database:
     async def verify_password(self, stored_hash: str, password: str) -> bool:
         """Verify password against stored hash"""
         return bcrypt.checkpw(password.encode(), stored_hash.encode())
+

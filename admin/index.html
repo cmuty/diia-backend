@@ -219,7 +219,7 @@
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
         .modal {
@@ -233,6 +233,10 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
+        }
+        
+        .modal.hidden {
+            display: none !important;
         }
 
         .modal-content {
@@ -319,35 +323,45 @@
     </div>
 
     <!-- Subscription Modal -->
-    <div id="subscriptionModal" class="modal hidden">
-        <div class="modal-content">
+    <div id="subscriptionModal" class="modal hidden" style="display: none;" onclick="closeSubscriptionModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
             <span class="close-modal" onclick="closeSubscriptionModal()">&times;</span>
             <h3>✏️ Редагувати підписку</h3>
+            <p id="currentUserName" style="color: #666; margin-bottom: 15px;"></p>
             <div class="form-group">
                 <label>Статус підписки</label>
-                <select id="subActive" style="width: 100%; padding: 10px; border-radius: 6px;">
+                <select id="subActive" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
                     <option value="1">Активна</option>
                     <option value="0">Неактивна</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Тип підписки</label>
-                <select id="subType" style="width: 100%; padding: 10px; border-radius: 6px;">
+                <select id="subType" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
                     <option value="безкоштовна">Безкоштовна</option>
-                    <option value="платна">Платна</option>
+                    <option value="basic">Basic</option>
+                    <option value="premium">Premium</option>
+                    <option value="lifetime">Lifetime (назавжди)</option>
                 </select>
             </div>
             <div class="form-group">
-                <label>Дійсна до (YYYY-MM-DD)</label>
-                <input type="date" id="subUntil">
+                <label>Дійсна до (залиш порожнім для безстрокової)</label>
+                <input type="date" id="subUntil" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
             </div>
-            <button class="btn-primary" onclick="updateSubscription()">Зберегти</button>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary" onclick="updateSubscription()">Зберегти</button>
+                <button class="btn-primary" onclick="closeSubscriptionModal()" style="background: #95a5a6;">Скасувати</button>
+            </div>
         </div>
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8000';
+        // Выбери URL: localhost для локального тестирования, или Render для продакшена
+        const API_URL = 'https://diia-backend.onrender.com'; // для продакшена
+        // const API_URL = 'http://localhost:8000'; // для локального тестирования
+        
         let currentUserId = null;
+        let currentUserLogin = null;
 
         function login() {
             const username = document.getElementById('adminUsername').value;
@@ -370,62 +384,141 @@
 
         async function loadUsers() {
             try {
-                // In production, replace with actual API call
-                // For now, we'll use mock data
-                const mockUsers = [];
+                const response = await fetch(`${API_URL}/api/admin/users`);
+                const data = await response.json();
+                const users = data.users || [];
                 
                 // Update stats
-                document.getElementById('totalUsers').textContent = mockUsers.length;
-                document.getElementById('activeSubscriptions').textContent = mockUsers.filter(u => u.subscription_active).length;
-                document.getElementById('newToday').textContent = 0;
+                document.getElementById('totalUsers').textContent = users.length;
+                document.getElementById('activeSubscriptions').textContent = users.filter(u => u.subscription_active).length;
+                
+                // Count new today
+                const today = new Date().toISOString().split('T')[0];
+                const newToday = users.filter(u => u.registered_at && u.registered_at.startsWith(today)).length;
+                document.getElementById('newToday').textContent = newToday;
 
                 // Update table
                 const tbody = document.getElementById('usersTableBody');
                 tbody.innerHTML = '';
 
-                mockUsers.forEach(user => {
+                users.forEach(user => {
                     const tr = document.createElement('tr');
+                    const subUntil = user.subscription_until ? user.subscription_until.split('T')[0] : '—';
+                    
                     tr.innerHTML = `
                         <td>${user.id}</td>
                         <td>${user.full_name}</td>
                         <td>${user.birth_date}</td>
                         <td>${user.login}</td>
                         <td><span class="badge ${user.subscription_active ? 'badge-active' : 'badge-inactive'}">${user.subscription_active ? 'Активна' : 'Неактивна'}</span></td>
-                        <td><span class="badge ${user.subscription_type === 'платна' ? 'badge-paid' : 'badge-free'}">${user.subscription_type}</span></td>
-                        <td>${user.subscription_until || '—'}</td>
+                        <td><span class="badge ${user.subscription_type === 'premium' || user.subscription_type === 'basic' ? 'badge-paid' : 'badge-free'}">${user.subscription_type}</span></td>
+                        <td>${subUntil}</td>
                         <td>
-                            <button class="action-btn" onclick="editSubscription(${user.id})">✏️ Редагувати</button>
+                            <button class="action-btn" onclick="editSubscription(${user.id}, '${user.login}', ${user.subscription_active}, '${user.subscription_type}', '${user.subscription_until || ''}')">✏️ Редагувати</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (error) {
                 console.error('Error loading users:', error);
+                alert('Помилка завантаження користувачів! Перевірте що сервер запущений.');
             }
         }
 
-        function editSubscription(userId) {
+        function editSubscription(userId, login, active, subType, subUntil) {
             currentUserId = userId;
-            document.getElementById('subscriptionModal').classList.remove('hidden');
+            currentUserLogin = login;
+            
+            // Find user in the table to get full name
+            const users = Array.from(document.querySelectorAll('#usersTableBody tr'));
+            const userRow = users.find(row => {
+                const firstCell = row.querySelector('td');
+                return firstCell && firstCell.textContent == userId;
+            });
+            
+            let userName = login;
+            if (userRow) {
+                const nameCell = userRow.querySelectorAll('td')[1];
+                if (nameCell) userName = nameCell.textContent;
+            }
+            
+            // Set user name
+            document.getElementById('currentUserName').textContent = `Користувач: ${userName} (${login})`;
+            
+            // Set current values
+            document.getElementById('subActive').value = active ? '1' : '0';
+            document.getElementById('subType').value = subType;
+            
+            // Clear date field first
+            document.getElementById('subUntil').value = '';
+            
+            if (subUntil && subUntil !== 'null' && subUntil !== '') {
+                document.getElementById('subUntil').value = subUntil.split('T')[0];
+            }
+            
+            // Show modal
+            const modal = document.getElementById('subscriptionModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
         }
 
         function closeSubscriptionModal() {
-            document.getElementById('subscriptionModal').classList.add('hidden');
+            // Hide modal
+            const modal = document.getElementById('subscriptionModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+            
             currentUserId = null;
+            currentUserLogin = null;
+            // Clear form
+            document.getElementById('subUntil').value = '';
+            document.getElementById('currentUserName').textContent = '';
         }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeSubscriptionModal();
+            }
+        });
+
+        // Ensure modal is hidden on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('subscriptionModal').classList.add('hidden');
+        });
 
         async function updateSubscription() {
             const active = document.getElementById('subActive').value === '1';
-            const type = document.getElementById('subType').value;
-            const until = document.getElementById('subUntil').value || null;
+            const sub_type = document.getElementById('subType').value;
+            const until_date = document.getElementById('subUntil').value;
+            const until = until_date ? `${until_date}T23:59:59` : null;
 
             try {
-                // In production, make API call to update subscription
-                alert('Підписку оновлено!');
-                closeSubscriptionModal();
-                loadUsers();
+                const response = await fetch(`${API_URL}/api/admin/update-subscription`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: currentUserId,
+                        active: active,
+                        sub_type: sub_type,
+                        until: until
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Підписку оновлено!');
+                    closeSubscriptionModal();
+                    loadUsers();
+                } else {
+                    alert('❌ Помилка: ' + (data.error || 'Unknown error'));
+                }
             } catch (error) {
-                alert('Помилка оновлення підписки!');
+                console.error('Update error:', error);
+                alert('❌ Помилка оновлення підписки!');
             }
         }
     </script>

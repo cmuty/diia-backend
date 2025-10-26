@@ -49,8 +49,8 @@ dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(router)
 
 # Database setup
-db_path = os.getenv("DATABASE_PATH", "database/diia.db")
-db = Database(db_path)
+db_url = os.getenv("DATABASE_URL", "database/diia.db")
+db = Database(db_url)
 
 # Middleware to inject database into bot handlers
 @dp.message.middleware()
@@ -154,6 +154,67 @@ async def api_get_photo(user_id):
         
     except Exception as e:
         logger.error(f"Get photo error: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+# Admin endpoints
+@flask_app.route("/api/admin/users", methods=["GET"])
+async def api_admin_get_users():
+    """Get all users (ADMIN)"""
+    try:
+        users = await db.get_all_users()
+        return jsonify({"users": users})
+    except Exception as e:
+        logger.error(f"Admin get users error: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+@flask_app.route("/api/admin/grant-subscription", methods=["POST"])
+async def api_admin_grant_subscription():
+    """Grant subscription (ADMIN)"""
+    try:
+        data = request.get_json()
+        login = data.get('login')
+        sub_type = data.get('sub_type')
+        days = data.get('days')
+        
+        user = await db.get_user_by_login(login)
+        if not user:
+            return jsonify({"error": "Користувач не знайдений"}), 404
+        
+        until = None
+        if days:
+            until_date = datetime.now() + timedelta(days=int(days))
+            until = until_date.isoformat()
+        
+        await db.update_subscription(user['id'], True, sub_type, until)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Підписку виданo користувачу {user['full_name']}",
+            "subscription_type": sub_type,
+            "subscription_until": until
+        })
+    except Exception as e:
+        logger.error(f"Grant subscription error: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+@flask_app.route("/api/admin/update-subscription", methods=["POST"])
+async def api_admin_update_subscription():
+    """Update subscription (ADMIN)"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        active = data.get('active')
+        sub_type = data.get('sub_type')
+        until = data.get('until')
+        
+        await db.update_subscription(user_id, active, sub_type, until)
+        
+        return jsonify({
+            "success": True,
+            "message": "Підписку оновлено"
+        })
+    except Exception as e:
+        logger.error(f"Update subscription error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 # Webhook for Telegram

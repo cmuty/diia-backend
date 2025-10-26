@@ -27,9 +27,13 @@ async def main():
     dp = Dispatcher(storage=storage)
     
     # Initialize database
-    db_path = os.getenv("DATABASE_PATH", "database/diia.db")
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    db = Database(db_path)
+    db_url = os.getenv("DATABASE_URL", "database/diia.db")
+    
+    # Create directory for SQLite if needed
+    if not db_url.startswith("postgresql"):
+        os.makedirs(os.path.dirname(db_url), exist_ok=True)
+    
+    db = Database(db_url)
     await db.init_db()
     
     # Register router with middleware to pass db and bot

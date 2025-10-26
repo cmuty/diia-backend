@@ -26,8 +26,8 @@ app.add_middleware(
 )
 
 # Database instance
-db_path = os.getenv("DATABASE_PATH", "database/diia.db")
-db = Database(db_path)
+db_url = os.getenv("DATABASE_URL", "database/diia.db")
+db = Database(db_url)
 
 # Middleware to inject db into request state
 @app.middleware("http")
@@ -141,6 +141,15 @@ async def get_user_photo(user_id: int):
     return RedirectResponse(url=user['photo_path'])
 
 
+@app.get("/api/admin/users")
+async def get_all_users_admin():
+    """
+    Get all users (ADMIN ONLY - add auth later)
+    """
+    users = await db.get_all_users()
+    return {"users": users}
+
+
 @app.post("/api/admin/grant-subscription")
 async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
     """
@@ -164,6 +173,19 @@ async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
         "message": f"Підписку виданo користувачу {user['full_name']}",
         "subscription_type": sub_type,
         "subscription_until": until
+    }
+
+
+@app.post("/api/admin/update-subscription")
+async def update_subscription_admin(user_id: int, active: bool, sub_type: str, until: str = None):
+    """
+    Update user subscription (ADMIN ONLY)
+    """
+    await db.update_subscription(user_id, active, sub_type, until)
+    
+    return {
+        "success": True,
+        "message": "Підписку оновлено"
     }
 
 

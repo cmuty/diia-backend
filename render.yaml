@@ -9,8 +9,8 @@ services:
     envVars:
       - key: BOT_TOKEN
         sync: false
-      - key: DATABASE_PATH
-        value: database/diia.db
+      - key: DATABASE_URL
+        value: "postgresql://postdia_user:kkRbzuUDLdnDvSUym3PvulCHtI815RQq@dpg-d3v8t5hr0fns73c9tq9g-a/postdia"
       - key: PORT
         fromService:
           type: web

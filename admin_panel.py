@@ -7,7 +7,9 @@ from datetime import datetime, timedelta
 
 
 async def main():
-    db = Database("database/diia.db")
+    import os
+    db_url = os.getenv("DATABASE_URL", "database/diia.db")
+    db = Database(db_url)
     await db.init_db()
     
     print("=" * 60)
