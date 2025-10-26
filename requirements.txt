@@ -1,7 +1,7 @@
 --only-binary=:all:
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-aiogram==3.5.0
+aiogram==3.6.0
 aiosqlite==0.19.0
 python-multipart==0.0.6
 pydantic==2.12.3
