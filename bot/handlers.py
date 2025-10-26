@@ -1,5 +1,5 @@
 """
-Telegram bot handlers
+Telegram bot handlers - Clean version without merge conflicts
 """
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
@@ -947,7 +947,6 @@ async def process_photo(message: Message, state: FSMContext, db, bot):
     from utils.cloudinary_helper import upload_photo_to_cloudinary
     
     photo = message.photo[-1]
-<<<<<<< HEAD
     
     # Download photo to temporary location
     os.makedirs("uploads/photos", exist_ok=True)
