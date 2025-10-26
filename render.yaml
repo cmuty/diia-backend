@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: diia-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_server.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_PATH
+        value: database/diia.db
+      - key: PORT
+        fromService:
+          type: web
+          name: diia-backend
+          property: port
+      - key: ADMIN_IDS
+        value: "448592121"
+      - key: CRYPTOPAY_TOKEN
+        value: "479115:AARxfBgUT3h1n9oBCwY1Y3UbgwN1n6S9mHn"
+    healthCheckPath: /api/health
+    autoDeploy: true
