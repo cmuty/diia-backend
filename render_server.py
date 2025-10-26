@@ -105,20 +105,37 @@ def api_login():
         login = data.get("login")
         password = data.get("password")
         
+        logger.info(f"Login attempt for: {login}")
+        
         # Get user by login
         user = await db.get_user_by_login(login)
         
         if not user:
+            logger.warning(f"User not found: {login}")
             return None, "Невірний логін або пароль"
+        
+        logger.info(f"User found: {login}, verifying password...")
         
         # Verify password
         password_valid = await db.verify_password(user['password_hash'], password)
         
         if not password_valid:
+            logger.warning(f"Invalid password for user: {login}")
             return None, "Невірний логін або пароль"
+        
+        logger.info(f"Login successful for: {login}")
         
         # Update last login
         await db.update_last_login(user['id'])
+        
+        # Convert datetime objects to strings
+        last_login = user['last_login']
+        if isinstance(last_login, datetime):
+            last_login = last_login.isoformat()
+        
+        registered_at = user['registered_at']
+        if isinstance(registered_at, datetime):
+            registered_at = registered_at.isoformat()
         
         user_safe = {
             "id": user['id'],
@@ -127,8 +144,8 @@ def api_login():
             "login": user['login'],
             "subscription_active": bool(user['subscription_active']),
             "subscription_type": user['subscription_type'],
-            "last_login": user['last_login'],
-            "registered_at": user['registered_at']
+            "last_login": last_login,
+            "registered_at": registered_at
         }
         
         return user_safe, None
@@ -164,14 +181,23 @@ def api_get_user(login):
         # photo_path now contains Cloudinary URL
         photo_url = user.get('photo_path')
         
+        # Convert datetime objects to strings
+        last_login = user['last_login']
+        if isinstance(last_login, datetime):
+            last_login = last_login.isoformat()
+        
+        subscription_until = user['subscription_until']
+        if isinstance(subscription_until, datetime):
+            subscription_until = subscription_until.isoformat()
+        
         return {
             "full_name": user['full_name'],
             "birth_date": user['birth_date'],
             "photo_url": photo_url,
-            "last_login": user['last_login'],
+            "last_login": last_login,
             "subscription_active": bool(user['subscription_active']),
             "subscription_type": user['subscription_type'],
-            "subscription_until": user['subscription_until']
+            "subscription_until": subscription_until
         }
     
     try:
@@ -217,13 +243,26 @@ def api_get_photo(user_id):
 def api_admin_get_users():
     """Get all users (ADMIN)"""
     async def _async_get_users():
-        return await db.get_all_users()
+        users = await db.get_all_users()
+        
+        # Convert datetime objects to strings for JSON serialization
+        for user in users:
+            if user.get('subscription_until') and isinstance(user['subscription_until'], datetime):
+                user['subscription_until'] = user['subscription_until'].isoformat()
+            if user.get('last_login') and isinstance(user['last_login'], datetime):
+                user['last_login'] = user['last_login'].isoformat()
+            if user.get('registered_at') and isinstance(user['registered_at'], datetime):
+                user['registered_at'] = user['registered_at'].isoformat()
+            if user.get('updated_at') and isinstance(user['updated_at'], datetime):
+                user['updated_at'] = user['updated_at'].isoformat()
+        
+        return users
     
     try:
         users = run_async(_async_get_users())
         return jsonify({"users": users})
     except Exception as e:
-        logger.error(f"Admin get users error: {e}")
+        logger.error(f"Admin get users error: {e}", exc_info=True)
         return jsonify({"error": "Помилка сервера"}), 500
 
 @flask_app.route("/api/admin/grant-subscription", methods=["POST"])
