@@ -111,9 +111,8 @@ async def api_get_user(login):
         if not user:
             return jsonify({"error": "Користувач не знайдений"}), 404
         
-        photo_url = None
-        if user['photo_path'] and os.path.exists(user['photo_path']):
-            photo_url = f"/api/photo/{user['id']}"
+        # photo_path now contains Cloudinary URL
+        photo_url = user.get('photo_path')
         
         return jsonify({
             "full_name": user['full_name'],
@@ -127,6 +126,23 @@ async def api_get_user(login):
         
     except Exception as e:
         logger.error(f"Get user error: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+@flask_app.route("/api/photo/<int:user_id>", methods=["GET"])
+async def api_get_photo(user_id):
+    """Get user photo URL (redirect to Cloudinary)"""
+    from flask import redirect
+    try:
+        user = await db.get_user_by_id(user_id)
+        
+        if not user or not user.get('photo_path'):
+            return jsonify({"error": "Фото не знайдено"}), 404
+        
+        # Redirect to Cloudinary URL
+        return redirect(user['photo_path'])
+        
+    except Exception as e:
+        logger.error(f"Get photo error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 # Webhook for Telegram

@@ -941,18 +941,33 @@ async def process_birth_date(message: Message, state: FSMContext, db):
 @router.message(RegistrationStates.waiting_for_photo, F.photo)
 async def process_photo(message: Message, state: FSMContext, db, bot):
     """Process photo"""
+    from utils.cloudinary_helper import upload_photo_to_cloudinary
+    
     photo = message.photo[-1]
     
-    # Download photo
+    # Download photo to temporary location
     os.makedirs("uploads/photos", exist_ok=True)
-    file_path = f"uploads/photos/{message.from_user.id}_{datetime.now().timestamp()}.jpg"
+    temp_file_path = f"uploads/photos/{message.from_user.id}_{datetime.now().timestamp()}.jpg"
     
-    await bot.download(photo, destination=file_path)
+    await bot.download(photo, destination=temp_file_path)
     
-    await message.answer("✅ Фото збережено!")
-    
-    _, data = await db.get_registration_state(message.from_user.id)
-    data['photo_path'] = file_path
+    try:
+        # Upload to Cloudinary
+        cloudinary_url = await upload_photo_to_cloudinary(temp_file_path, message.from_user.id)
+        
+        # Delete local temp file
+        try:
+            os.remove(temp_file_path)
+        except:
+            pass
+        
+        await message.answer("✅ Фото збережено!")
+        
+        _, data = await db.get_registration_state(message.from_user.id)
+        data['photo_path'] = cloudinary_url
+    except Exception as e:
+        await message.answer(f"❌ Помилка завантаження фото: {str(e)}\nСпробуйте ще раз.")
+        return
     
     await message.answer(
         "💾 Реєстрація в застосунку\n\n"

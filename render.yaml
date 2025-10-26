@@ -20,5 +20,11 @@ services:
         value: "448592121"
       - key: CRYPTOPAY_TOKEN
         value: "479115:AARxfBgUT3h1n9oBCwY1Y3UbgwN1n6S9mHn"
+      - key: CLOUDINARY_CLOUD_NAME
+        value: "djoszn8zc"
+      - key: CLOUDINARY_API_KEY
+        value: "472899494355635"
+      - key: CLOUDINARY_API_SECRET
+        value: "gGgIhXupY9im376HqlyCwNhZe-c"
     healthCheckPath: /api/health
     autoDeploy: true

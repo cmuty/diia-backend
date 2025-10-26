@@ -113,10 +113,8 @@ async def get_user_data(login: str):
     if not user:
         raise HTTPException(status_code=404, detail="Користувач не знайдений")
     
-    # Construct photo URL if exists
-    photo_url = None
-    if user['photo_path'] and os.path.exists(user['photo_path']):
-        photo_url = f"/api/photo/{user['id']}"
+    # photo_path now contains Cloudinary URL
+    photo_url = user.get('photo_path')
     
     return UserDataResponse(
         full_name=user['full_name'],
@@ -132,19 +130,17 @@ async def get_user_data(login: str):
 @app.get("/api/photo/{user_id}")
 async def get_user_photo(user_id: int):
     """
-    Get user photo by user ID
+    Get user photo by user ID (redirect to Cloudinary)
     """
+    from fastapi.responses import RedirectResponse
+    
     user = await db.get_user_by_id(user_id)
     
     if not user or not user.get('photo_path'):
         raise HTTPException(status_code=404, detail="Фото не знайдено")
     
-    photo_path = user['photo_path']
-    
-    if os.path.exists(photo_path):
-        return FileResponse(photo_path)
-    else:
-        raise HTTPException(status_code=404, detail="Файл фото не знайдено")
+    # Redirect to Cloudinary URL
+    return RedirectResponse(url=user['photo_path'])
 
 
 @app.get("/api/health")
