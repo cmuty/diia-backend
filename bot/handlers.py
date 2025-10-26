@@ -971,26 +971,6 @@ async def process_photo(message: Message, state: FSMContext, db, bot):
     except Exception as e:
         await message.answer(f"❌ Помилка завантаження фото: {str(e)}\nСпробуйте ще раз.")
         return
-=======
-
-    buffer = BytesIO()
-    await bot.download(photo, destination=buffer)
-
-    public_id = f"user_{message.from_user.id}_{int(datetime.now().timestamp())}"
-
-    try:
-        photo_url = await upload_photo_to_cloudinary(buffer, public_id=public_id)
-    except Exception:
-        await message.answer(
-            "❌ Не вдалося зберегти фото. Спробуйте ще раз пізніше."
-        )
-        return
-
-    await message.answer("✅ Фото збережено!")
-
-    _, data = await db.get_registration_state(message.from_user.id)
-    data['photo_url'] = photo_url
->>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
     
     await message.answer(
         "💾 Реєстрація в застосунку\n\n"
