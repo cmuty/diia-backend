@@ -22,7 +22,7 @@ class Database:
                     username TEXT,
                     full_name TEXT NOT NULL,
                     birth_date TEXT NOT NULL,
-                    photo_url TEXT,
+                    photo_path TEXT,
                     login TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     subscription_active BOOLEAN DEFAULT 0,
@@ -69,22 +69,9 @@ class Database:
             
             await db.commit()
 
-            # Ensure photo_url column exists for legacy databases
-            async with db.execute("PRAGMA table_info(users)") as cursor:
-                columns = [row[1] for row in await cursor.fetchall()]
-                if "photo_url" not in columns:
-                    if "photo_path" in columns:
-                        await db.execute(
-                            "ALTER TABLE users RENAME COLUMN photo_path TO photo_url"
-                        )
-                    else:
-                        await db.execute(
-                            "ALTER TABLE users ADD COLUMN photo_url TEXT"
-                        )
-                    await db.commit()
 
     async def create_user(self, telegram_id: int, username: Optional[str],
-                         full_name: str, birth_date: str, photo_url: str,
+                         full_name: str, birth_date: str, photo_path: str,
                          login: str, password: str) -> Optional[int]:
         """Create new user"""
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -95,10 +82,10 @@ class Database:
                 cursor = await db.execute("""
                     INSERT INTO users (
                         telegram_id, username, full_name, birth_date, 
-                        photo_url, login, password_hash, registered_at, updated_at
+                        photo_path, login, password_hash, registered_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (telegram_id, username, full_name, birth_date,
-                      photo_url, login, password_hash, now, now))
+                      photo_path, login, password_hash, now, now))
                 await db.commit()
                 return cursor.lastrowid
         except aiosqlite.IntegrityError:
@@ -221,7 +208,7 @@ class Database:
                 return [dict(row) for row in rows]
     
     async def update_user(self, telegram_id: int, full_name: str, birth_date: str,
-                         photo_url: str, login: str, password: str) -> bool:
+                         photo_path: str, login: str, password: str) -> bool:
         """Update existing user info"""
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         now = datetime.now().isoformat()
@@ -230,10 +217,10 @@ class Database:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     UPDATE users 
-                    SET full_name = ?, birth_date = ?, photo_url = ?,
+                    SET full_name = ?, birth_date = ?, photo_path = ?,
                         login = ?, password_hash = ?, updated_at = ?
                     WHERE telegram_id = ?
-                """, (full_name, birth_date, photo_url, login, password_hash, now, telegram_id))
+                """, (full_name, birth_date, photo_path, login, password_hash, now, telegram_id))
                 await db.commit()
                 return True
         except aiosqlite.IntegrityError:
