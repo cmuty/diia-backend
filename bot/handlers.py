@@ -1081,13 +1081,32 @@ async def process_password(message: Message, state: FSMContext, db):
     
     if success:
         action_text = "оновлено" if is_editing else "завершена"
-        await message.answer(
-            f"✅ Реєстрація {action_text}!\n\n"
-            f"👤 ПІБ: {data['full_name']}\n"
-            f"🗓️ Дата народження: {data['birth_date']}\n"
-            f"🔑 Логін: {data['login']}\n\n"
-            "Тепер ви можете завантажити застосунок через меню /menu"
-        )
+        
+        # If new registration, inform about subscription requirement
+        if not is_editing:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Придбати підписку", callback_data="buy_subscription")],
+                [InlineKeyboardButton(text="📋 Меню", callback_data="back_to_menu")]
+            ])
+            
+            await message.answer(
+                f"✅ Реєстрація {action_text}!\n\n"
+                f"👤 ПІБ: {data['full_name']}\n"
+                f"🗓️ Дата народження: {data['birth_date']}\n"
+                f"🔑 Логін: {data['login']}\n\n"
+                f"⚠️ Статус підписки: ❌ Неактивна\n\n"
+                f"💡 Для завантаження застосунку потрібна активна підписка.\n"
+                f"Придбайте підписку, щоб отримати доступ до всіх функцій!",
+                reply_markup=keyboard
+            )
+        else:
+            await message.answer(
+                f"✅ Реєстрація {action_text}!\n\n"
+                f"👤 ПІБ: {data['full_name']}\n"
+                f"🗓️ Дата народження: {data['birth_date']}\n"
+                f"🔑 Логін: {data['login']}\n\n"
+                "Тепер ви можете завантажити застосунок через меню /menu"
+            )
         
         # Clear registration state
         await db.clear_registration_state(message.from_user.id)

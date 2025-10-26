@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from database.models import Database
@@ -74,31 +75,44 @@ async def login(request: LoginRequest):
     Authenticate user
     iOS app will call this endpoint with login and password
     """
-    user = await db.verify_password(request.login, request.password)
+    # Get user by login
+    user = await db.get_user_by_login(request.login)
     
-    if user:
-        # Remove sensitive data
-        user_safe = {
-            "id": user['id'],
-            "full_name": user['full_name'],
-            "birth_date": user['birth_date'],
-            "login": user['login'],
-            "subscription_active": bool(user['subscription_active']),
-            "subscription_type": user['subscription_type'],
-            "last_login": user['last_login'],
-            "registered_at": user['registered_at']
-        }
-        
-        return LoginResponse(
-            success=True,
-            message="Успішна авторизація",
-            user=user_safe
-        )
-    else:
+    if not user:
         return LoginResponse(
             success=False,
             message="Невірний логін або пароль"
         )
+    
+    # Verify password
+    password_valid = await db.verify_password(user['password_hash'], request.password)
+    
+    if not password_valid:
+        return LoginResponse(
+            success=False,
+            message="Невірний логін або пароль"
+        )
+    
+    # Update last login
+    await db.update_last_login(user['id'])
+    
+    # Remove sensitive data
+    user_safe = {
+        "id": user['id'],
+        "full_name": user['full_name'],
+        "birth_date": user['birth_date'],
+        "login": user['login'],
+        "subscription_active": bool(user['subscription_active']),
+        "subscription_type": user['subscription_type'],
+        "last_login": user['last_login'],
+        "registered_at": user['registered_at']
+    }
+    
+    return LoginResponse(
+        success=True,
+        message="Успішна авторизація",
+        user=user_safe
+    )
 
 
 @app.get("/api/user/{login}", response_model=UserDataResponse)
@@ -155,8 +169,6 @@ async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
     """
     Grant subscription to user (ADMIN ONLY - add auth later)
     """
-    from datetime import timedelta
-    
     user = await db.get_user_by_login(login)
     if not user:
         raise HTTPException(status_code=404, detail="Користувач не знайдений")

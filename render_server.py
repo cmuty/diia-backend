@@ -4,6 +4,7 @@ Combines FastAPI API with Telegram Bot Webhook
 """
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
@@ -84,30 +85,43 @@ async def api_login():
         login = data.get("login")
         password = data.get("password")
         
-        user = await db.verify_password(login, password)
+        # Get user by login
+        user = await db.get_user_by_login(login)
         
-        if user:
-            user_safe = {
-                "id": user['id'],
-                "full_name": user['full_name'],
-                "birth_date": user['birth_date'],
-                "login": user['login'],
-                "subscription_active": bool(user['subscription_active']),
-                "subscription_type": user['subscription_type'],
-                "last_login": user['last_login'],
-                "registered_at": user['registered_at']
-            }
-            
-            return jsonify({
-                "success": True,
-                "message": "Успішна авторизація",
-                "user": user_safe
-            })
-        else:
+        if not user:
             return jsonify({
                 "success": False,
                 "message": "Невірний логін або пароль"
             }), 401
+        
+        # Verify password
+        password_valid = await db.verify_password(user['password_hash'], password)
+        
+        if not password_valid:
+            return jsonify({
+                "success": False,
+                "message": "Невірний логін або пароль"
+            }), 401
+        
+        # Update last login
+        await db.update_last_login(user['id'])
+        
+        user_safe = {
+            "id": user['id'],
+            "full_name": user['full_name'],
+            "birth_date": user['birth_date'],
+            "login": user['login'],
+            "subscription_active": bool(user['subscription_active']),
+            "subscription_type": user['subscription_type'],
+            "last_login": user['last_login'],
+            "registered_at": user['registered_at']
+        }
+        
+        return jsonify({
+            "success": True,
+            "message": "Успішна авторизація",
+            "user": user_safe
+        })
             
     except Exception as e:
         logger.error(f"Login error: {e}")

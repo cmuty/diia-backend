@@ -28,9 +28,11 @@ class Database:
                 self.db_path = self.db_url.replace("sqlite:///", "")
             else:
                 self.db_path = self.db_url
+            self.pool = None
         else:
             # PostgreSQL connection pool
             self.pool = None
+            self.db_path = None  # Not used for PostgreSQL
 
     async def connect(self):
         """Create connection pool for PostgreSQL"""
@@ -179,11 +181,11 @@ class Database:
                          login: str, password: str) -> Optional[int]:
         """Create new user"""
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        now = datetime.now().isoformat()
         
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 row = await conn.fetchrow("""
                     INSERT INTO users (telegram_id, username, full_name, birth_date, photo_path,
                                      login, password_hash, registered_at, updated_at)
@@ -193,6 +195,7 @@ class Database:
                     login, password_hash, now, now)
                 return row['id'] if row else None
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute("""
                     INSERT INTO users (telegram_id, username, full_name, birth_date, photo_path,
@@ -249,11 +252,11 @@ class Database:
                          photo_path: str, login: str, password: str) -> bool:
         """Update user information"""
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        now = datetime.now().isoformat()
         
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 result = await conn.execute("""
                     UPDATE users 
                     SET full_name = $1, birth_date = $2, photo_path = $3,
@@ -262,6 +265,7 @@ class Database:
                 """, full_name, birth_date, photo_path, login, password_hash, now, telegram_id)
                 return result != "UPDATE 0"
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     UPDATE users 
@@ -274,13 +278,13 @@ class Database:
 
     async def update_last_login(self, user_id: int):
         """Update last login timestamp"""
-        now = datetime.now().isoformat()
-        
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 await conn.execute("UPDATE users SET last_login = $1 WHERE id = $2", now, user_id)
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
                 await db.commit()
@@ -288,11 +292,10 @@ class Database:
     async def update_subscription(self, user_id: int, active: bool, 
                                  sub_type: str, until: Optional[str] = None):
         """Update user subscription"""
-        now = datetime.now().isoformat()
-        
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 await conn.execute("""
                     UPDATE users 
                     SET subscription_active = $1, subscription_type = $2, 
@@ -300,13 +303,14 @@ class Database:
                     WHERE id = $5
                 """, active, sub_type, until, now, user_id)
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     UPDATE users 
                     SET subscription_active = ?, subscription_type = ?, 
                         subscription_until = ?, updated_at = ?
                     WHERE id = ?
-                """, (active, sub_type, until, now, user_id))
+                    """, (active, sub_type, until, now, user_id))
                 await db.commit()
 
     async def get_all_users(self) -> List[Dict[str, Any]]:
@@ -327,11 +331,11 @@ class Database:
     async def save_registration_state(self, telegram_id: int, state: str, data: dict):
         """Save registration state"""
         data_json = json.dumps(data)
-        now = datetime.now().isoformat()
         
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 await conn.execute("""
                     INSERT INTO registration_temp (telegram_id, state, data, created_at)
                     VALUES ($1, $2, $3::jsonb, $4)
@@ -339,11 +343,12 @@ class Database:
                     SET state = $2, data = $3::jsonb, created_at = $4
                 """, telegram_id, state, data_json, now)
         else:
+            now_str = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     INSERT OR REPLACE INTO registration_temp (telegram_id, state, data, created_at)
                     VALUES (?, ?, ?, ?)
-                """, (telegram_id, state, data_json, now))
+                    """, (telegram_id, state, data_json, now_str))
                 await db.commit()
 
     async def get_registration_state(self, telegram_id: int):
@@ -381,16 +386,19 @@ class Database:
                 await db.execute("DELETE FROM registration_temp WHERE telegram_id = ?", (telegram_id,))
                 await db.commit()
 
+    async def clear_registration_state(self, telegram_id: int):
+        """Clear registration state (alias for delete_registration_state)"""
+        await self.delete_registration_state(telegram_id)
+
     # Payment operations
     async def create_payment(self, user_id: int, amount: float, currency: str,
                             subscription_type: str, subscription_days: int,
                             payment_method: str = None) -> int:
         """Create payment record"""
-        now = datetime.now().isoformat()
-        
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 row = await conn.fetchrow("""
                     INSERT INTO payments (user_id, amount, currency, payment_method, status,
                                         subscription_type, subscription_days, created_at)
@@ -399,6 +407,7 @@ class Database:
                 """, user_id, amount, currency, payment_method, subscription_type, subscription_days, now)
                 return row['id']
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute("""
                     INSERT INTO payments (user_id, amount, currency, payment_method, status,
@@ -410,17 +419,17 @@ class Database:
 
     async def complete_payment(self, payment_id: int):
         """Mark payment as completed"""
-        now = datetime.now().isoformat()
-        
         if self.is_postgres:
             await self.connect()
             async with self.pool.acquire() as conn:
+                now = datetime.now()  # datetime object for PostgreSQL
                 await conn.execute("""
                     UPDATE payments 
                     SET status = 'completed', completed_at = $1 
                     WHERE id = $2
                 """, now, payment_id)
         else:
+            now = datetime.now().isoformat()  # string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     UPDATE payments 
@@ -432,3 +441,29 @@ class Database:
     async def verify_password(self, stored_hash: str, password: str) -> bool:
         """Verify password against stored hash"""
         return bcrypt.checkpw(password.encode(), stored_hash.encode())
+
+    async def login_exists(self, login: str) -> bool:
+        """Check if login already exists"""
+        if self.is_postgres:
+            await self.connect()
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT 1 FROM users WHERE login = $1", login)
+                return row is not None
+        else:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("SELECT 1 FROM users WHERE login = ?", (login,)) as cursor:
+                    row = await cursor.fetchone()
+                    return row is not None
+
+    async def telegram_id_exists(self, telegram_id: int) -> bool:
+        """Check if telegram_id already exists"""
+        if self.is_postgres:
+            await self.connect()
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT 1 FROM users WHERE telegram_id = $1", telegram_id)
+                return row is not None
+        else:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("SELECT 1 FROM users WHERE telegram_id = ?", (telegram_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    return row is not None

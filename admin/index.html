@@ -349,7 +349,7 @@
                 <input type="date" id="subUntil" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
             </div>
             <div style="display: flex; gap: 10px;">
-                <button class="btn-primary" onclick="updateSubscription()">Зберегти</button>
+            <button class="btn-primary" onclick="updateSubscription()">Зберегти</button>
                 <button class="btn-primary" onclick="closeSubscriptionModal()" style="background: #95a5a6;">Скасувати</button>
             </div>
         </div>
@@ -511,8 +511,8 @@
                 
                 if (data.success) {
                     alert('✅ Підписку оновлено!');
-                    closeSubscriptionModal();
-                    loadUsers();
+                closeSubscriptionModal();
+                loadUsers();
                 } else {
                     alert('❌ Помилка: ' + (data.error || 'Unknown error'));
                 }
