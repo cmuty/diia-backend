@@ -8,10 +8,22 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
+import cloudinary
+
 from bot.handlers import router
 from database.models import Database
 
 load_dotenv()
+
+# Configure Cloudinary from environment
+cloudinary_url = os.getenv("CLOUDINARY_URL")
+if not cloudinary_url:
+    raise RuntimeError("CLOUDINARY_URL is not configured")
+
+cloudinary.config(
+    cloudinary_url=cloudinary_url,
+    secure=True,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

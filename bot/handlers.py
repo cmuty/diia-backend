@@ -11,6 +11,9 @@ import os
 import re
 import aiohttp
 import asyncio
+from io import BytesIO
+
+from bot.utils.photo_upload import upload_photo_to_cloudinary
 
 router = Router()
 
@@ -942,17 +945,24 @@ async def process_birth_date(message: Message, state: FSMContext, db):
 async def process_photo(message: Message, state: FSMContext, db, bot):
     """Process photo"""
     photo = message.photo[-1]
-    
-    # Download photo
-    os.makedirs("uploads/photos", exist_ok=True)
-    file_path = f"uploads/photos/{message.from_user.id}_{datetime.now().timestamp()}.jpg"
-    
-    await bot.download(photo, destination=file_path)
-    
+
+    buffer = BytesIO()
+    await bot.download(photo, destination=buffer)
+
+    public_id = f"user_{message.from_user.id}_{int(datetime.now().timestamp())}"
+
+    try:
+        photo_url = await upload_photo_to_cloudinary(buffer, public_id=public_id)
+    except Exception:
+        await message.answer(
+            "❌ Не вдалося зберегти фото. Спробуйте ще раз пізніше."
+        )
+        return
+
     await message.answer("✅ Фото збережено!")
-    
+
     _, data = await db.get_registration_state(message.from_user.id)
-    data['photo_path'] = file_path
+    data['photo_url'] = photo_url
     
     await message.answer(
         "💾 Реєстрація в застосунку\n\n"
@@ -1047,7 +1057,7 @@ async def process_password(message: Message, state: FSMContext, db):
             telegram_id=message.from_user.id,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
-            photo_path=data['photo_path'],
+            photo_url=data['photo_url'],
             login=data['login'],
             password=password
         )
@@ -1058,7 +1068,7 @@ async def process_password(message: Message, state: FSMContext, db):
             username=message.from_user.username,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
-            photo_path=data['photo_path'],
+            photo_url=data['photo_url'],
             login=data['login'],
             password=password
         )

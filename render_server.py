@@ -9,6 +9,8 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 
+import cloudinary
+
 # Import bot and database
 from bot.handlers import router
 from aiogram import Bot, Dispatcher
@@ -22,6 +24,16 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure Cloudinary
+cloudinary_url = os.getenv("CLOUDINARY_URL")
+if not cloudinary_url:
+    raise RuntimeError("CLOUDINARY_URL is not configured")
+
+cloudinary.config(
+    cloudinary_url=cloudinary_url,
+    secure=True,
+)
 
 # Flask app for API endpoints
 flask_app = Flask(__name__)
@@ -51,7 +63,6 @@ async def db_middleware(handler, event, data):
 async def init_db():
     """Initialize database"""
     os.makedirs("database", exist_ok=True)
-    os.makedirs("uploads/photos", exist_ok=True)
     await db.init_db()
 
 # Flask API endpoints (same as FastAPI)
@@ -111,9 +122,7 @@ async def api_get_user(login):
         if not user:
             return jsonify({"error": "Користувач не знайдений"}), 404
         
-        photo_url = None
-        if user['photo_path'] and os.path.exists(user['photo_path']):
-            photo_url = f"/api/photo/{user['id']}"
+        photo_url = user.get('photo_url')
         
         return jsonify({
             "full_name": user['full_name'],

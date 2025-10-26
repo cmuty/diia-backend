@@ -22,7 +22,7 @@ async def check_database():
                 print(f"   Login: {user['login']}")
                 print(f"   Full Name: {user['full_name']}")
                 print(f"   Birth Date: {user['birth_date']}")
-                print(f"   Photo: {user['photo_path']}")
+                print(f"   Photo: {user['photo_url']}")
                 print(f"   Telegram ID: {user['telegram_id']}")
                 print(f"   Registered: {user['registered_at']}")
                 print()

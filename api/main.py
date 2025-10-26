@@ -1,10 +1,9 @@
 """
 FastAPI Server for iOS App Authentication
 """
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -45,7 +44,6 @@ app.include_router(admin_router)
 async def startup():
     """Initialize database on startup"""
     os.makedirs("database", exist_ok=True)
-    os.makedirs("uploads/photos", exist_ok=True)
     await db.init_db()
 
 
@@ -114,9 +112,7 @@ async def get_user_data(login: str):
         raise HTTPException(status_code=404, detail="Користувач не знайдений")
     
     # Construct photo URL if exists
-    photo_url = None
-    if user['photo_path'] and os.path.exists(user['photo_path']):
-        photo_url = f"/api/photo/{user['id']}"
+    photo_url = user.get('photo_url')
     
     return UserDataResponse(
         full_name=user['full_name'],
@@ -136,15 +132,10 @@ async def get_user_photo(user_id: int):
     """
     user = await db.get_user_by_id(user_id)
     
-    if not user or not user.get('photo_path'):
+    if not user or not user.get('photo_url'):
         raise HTTPException(status_code=404, detail="Фото не знайдено")
-    
-    photo_path = user['photo_path']
-    
-    if os.path.exists(photo_path):
-        return FileResponse(photo_path)
-    else:
-        raise HTTPException(status_code=404, detail="Файл фото не знайдено")
+
+    return RedirectResponse(user['photo_url'])
 
 
 @app.get("/api/health")
