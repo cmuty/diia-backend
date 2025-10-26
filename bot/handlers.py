@@ -1062,7 +1062,7 @@ async def process_password(message: Message, state: FSMContext, db):
             telegram_id=message.from_user.id,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
-            photo_url=data['photo_url'],
+            photo_path=data['photo_path'],
             login=data['login'],
             password=password
         )
@@ -1073,7 +1073,7 @@ async def process_password(message: Message, state: FSMContext, db):
             username=message.from_user.username,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
-            photo_url=data['photo_url'],
+            photo_path=data['photo_path'],
             login=data['login'],
             password=password
         )
