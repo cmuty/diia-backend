@@ -3,6 +3,7 @@ services:
     name: diia-backend
     runtime: python
     plan: free
+    pythonVersion: 3.11.9
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn render_server:flask_app
     envVars:
