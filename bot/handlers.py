@@ -439,16 +439,22 @@ async def check_payment_status(callback: CallbackQuery, db):
     # Calculate new subscription end date
     if plan_key == "lifetime":
         subscription_until = None
+        subscription_until_display = "Назавжди"
         subscription_type = "Назавжди"
     else:
         current_date = datetime.now()
         if user['subscription_until']:
             try:
-                current_date = datetime.fromisoformat(user['subscription_until'])
+                # Parse existing subscription_until (can be datetime or string)
+                if isinstance(user['subscription_until'], str):
+                    current_date = datetime.fromisoformat(user['subscription_until'])
+                elif isinstance(user['subscription_until'], datetime):
+                    current_date = user['subscription_until']
             except:
                 current_date = datetime.now()
         
-        subscription_until = (current_date + timedelta(days=plan['days'])).isoformat()
+        subscription_until = current_date + timedelta(days=plan['days'])
+        subscription_until_display = subscription_until.isoformat()
         subscription_type = f"{plan['days']} днів"
     
     # Update user subscription
@@ -465,10 +471,11 @@ async def check_payment_status(callback: CallbackQuery, db):
         success = False
     
     if success:
+        display_until = subscription_until_display if plan_key != "lifetime" else "Назавжди"
         await callback.message.edit_text(
             f"✅ Підписку активовано!\n\n"
             f"План: {plan['text']}\n"
-            f"Дійсна до: {subscription_until if subscription_until else 'Назавжди'}\n\n"
+            f"Дійсна до: {display_until}\n\n"
             f"Тепер ви можете завантажити застосунок через меню!"
         )
         

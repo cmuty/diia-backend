@@ -2,13 +2,18 @@
 Админ панель для управления пользователями и подписками
 """
 import asyncio
+import os
+from dotenv import load_dotenv
 from database.models import Database
 from datetime import datetime, timedelta
 
+# Load environment variables
+load_dotenv()
+
 
 async def main():
-    import os
     db_url = os.getenv("DATABASE_URL", "database/diia.db")
+    print(f"🔌 Подключение к БД: {db_url[:50]}...")
     db = Database(db_url)
     await db.init_db()
     
@@ -96,8 +101,7 @@ async def grant_subscription(db):
     
     until = None
     if days and days.isdigit():
-        until_date = datetime.now() + timedelta(days=int(days))
-        until = until_date.isoformat()
+        until = datetime.now() + timedelta(days=int(days))
     
     await db.update_subscription(user['id'], True, sub_type, until)
     

@@ -4,8 +4,10 @@ Combines FastAPI API with Telegram Bot Webhook
 """
 import asyncio
 import logging
+import json
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -36,8 +38,16 @@ cloudinary.config(
     secure=True,
 )
 
+# Custom JSON encoder for datetime objects
+class CustomJSONProvider(DefaultJSONProvider):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 # Flask app for API endpoints
 flask_app = Flask(__name__)
+flask_app.json = CustomJSONProvider(flask_app)
 CORS(flask_app)
 
 # Telegram Bot setup
@@ -60,6 +70,16 @@ async def db_middleware(handler, event, data):
     data["db"] = db
     return await handler(event, data)
 
+# Helper function to run async code in sync context
+def run_async(coro):
+    """Run async coroutine in sync context"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 # Initialize database
 async def init_db():
     """Initialize database"""
@@ -78,9 +98,9 @@ def keep_alive():
     return jsonify({"status": "ok", "message": "Server is alive"})
 
 @flask_app.route("/api/auth/login", methods=["POST"])
-async def api_login():
+def api_login():
     """Authenticate user"""
-    try:
+    async def _async_login():
         data = request.json
         login = data.get("login")
         password = data.get("password")
@@ -89,19 +109,13 @@ async def api_login():
         user = await db.get_user_by_login(login)
         
         if not user:
-            return jsonify({
-                "success": False,
-                "message": "Невірний логін або пароль"
-            }), 401
+            return None, "Невірний логін або пароль"
         
         # Verify password
         password_valid = await db.verify_password(user['password_hash'], password)
         
         if not password_valid:
-            return jsonify({
-                "success": False,
-                "message": "Невірний логін або пароль"
-            }), 401
+            return None, "Невірний логін або пароль"
         
         # Update last login
         await db.update_last_login(user['id'])
@@ -117,6 +131,17 @@ async def api_login():
             "registered_at": user['registered_at']
         }
         
+        return user_safe, None
+    
+    try:
+        user_safe, error = run_async(_async_login())
+        
+        if error:
+            return jsonify({
+                "success": False,
+                "message": error
+            }), 401
+        
         return jsonify({
             "success": True,
             "message": "Успішна авторизація",
@@ -128,18 +153,18 @@ async def api_login():
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
 
 @flask_app.route("/api/user/<login>", methods=["GET"])
-async def api_get_user(login):
+def api_get_user(login):
     """Get user data by login"""
-    try:
+    async def _async_get_user():
         user = await db.get_user_by_login(login)
         
         if not user:
-            return jsonify({"error": "Користувач не знайдений"}), 404
+            return None
         
         # photo_path now contains Cloudinary URL
         photo_url = user.get('photo_path')
         
-        return jsonify({
+        return {
             "full_name": user['full_name'],
             "birth_date": user['birth_date'],
             "photo_url": photo_url,
@@ -147,24 +172,41 @@ async def api_get_user(login):
             "subscription_active": bool(user['subscription_active']),
             "subscription_type": user['subscription_type'],
             "subscription_until": user['subscription_until']
-        })
+        }
+    
+    try:
+        user_data = run_async(_async_get_user())
+        
+        if not user_data:
+            return jsonify({"error": "Користувач не знайдений"}), 404
+        
+        return jsonify(user_data)
         
     except Exception as e:
         logger.error(f"Get user error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 @flask_app.route("/api/photo/<int:user_id>", methods=["GET"])
-async def api_get_photo(user_id):
+def api_get_photo(user_id):
     """Get user photo URL (redirect to Cloudinary)"""
     from flask import redirect
-    try:
+    
+    async def _async_get_photo():
         user = await db.get_user_by_id(user_id)
         
         if not user or not user.get('photo_path'):
+            return None
+        
+        return user['photo_path']
+    
+    try:
+        photo_url = run_async(_async_get_photo())
+        
+        if not photo_url:
             return jsonify({"error": "Фото не знайдено"}), 404
         
         # Redirect to Cloudinary URL
-        return redirect(user['photo_path'])
+        return redirect(photo_url)
         
     except Exception as e:
         logger.error(f"Get photo error: {e}")
@@ -172,19 +214,22 @@ async def api_get_photo(user_id):
 
 # Admin endpoints
 @flask_app.route("/api/admin/users", methods=["GET"])
-async def api_admin_get_users():
+def api_admin_get_users():
     """Get all users (ADMIN)"""
+    async def _async_get_users():
+        return await db.get_all_users()
+    
     try:
-        users = await db.get_all_users()
+        users = run_async(_async_get_users())
         return jsonify({"users": users})
     except Exception as e:
         logger.error(f"Admin get users error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 @flask_app.route("/api/admin/grant-subscription", methods=["POST"])
-async def api_admin_grant_subscription():
+def api_admin_grant_subscription():
     """Grant subscription (ADMIN)"""
-    try:
+    async def _async_grant():
         data = request.get_json()
         login = data.get('login')
         sub_type = data.get('sub_type')
@@ -192,60 +237,84 @@ async def api_admin_grant_subscription():
         
         user = await db.get_user_by_login(login)
         if not user:
-            return jsonify({"error": "Користувач не знайдений"}), 404
+            return None, "Користувач не знайдений"
         
         until = None
         if days:
-            until_date = datetime.now() + timedelta(days=int(days))
-            until = until_date.isoformat()
+            until = datetime.now() + timedelta(days=int(days))
         
         await db.update_subscription(user['id'], True, sub_type, until)
         
-        return jsonify({
+        return {
             "success": True,
             "message": f"Підписку виданo користувачу {user['full_name']}",
             "subscription_type": sub_type,
-            "subscription_until": until
-        })
+            "subscription_until": until.isoformat() if until else None
+        }, None
+    
+    try:
+        result, error = run_async(_async_grant())
+        
+        if error:
+            return jsonify({"error": error}), 404
+        
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Grant subscription error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 @flask_app.route("/api/admin/update-subscription", methods=["POST"])
-async def api_admin_update_subscription():
+def api_admin_update_subscription():
     """Update subscription (ADMIN)"""
-    try:
+    async def _async_update():
         data = request.get_json()
         user_id = data.get('user_id')
         active = data.get('active')
         sub_type = data.get('sub_type')
-        until = data.get('until')
+        until_str = data.get('until')
+        
+        # Convert string to datetime if provided
+        until = None
+        if until_str:
+            try:
+                until = datetime.fromisoformat(until_str)
+            except:
+                return None, "Невірний формат дати"
         
         await db.update_subscription(user_id, active, sub_type, until)
         
-        return jsonify({
+        return {
             "success": True,
             "message": "Підписку оновлено"
-        })
+        }, None
+    
+    try:
+        result, error = run_async(_async_update())
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Update subscription error: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 # Webhook for Telegram
 @flask_app.route("/webhook", methods=["POST"])
-async def webhook():
+def webhook():
     """Telegram webhook handler"""
-    try:
+    async def _async_webhook():
         update_json = request.json
         update = await bot.session.api._process_update(update_json)
-        
-        # Create aiohttp request for bot handler
-        bot_request = request.get_json()
         
         # Process update
         await dp._process_update(update)
         
-        return jsonify({"ok": True})
+        return {"ok": True}
+    
+    try:
+        result = run_async(_async_webhook())
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -253,19 +322,27 @@ async def webhook():
 
 # Webhook setup endpoint
 @flask_app.route("/set_webhook", methods=["POST"])
-async def set_webhook_endpoint():
+def set_webhook_endpoint():
     """Set webhook URL (call once after deploy)"""
-    webhook_url = request.json.get("url")
+    async def _async_set_webhook():
+        webhook_url = request.json.get("url")
+        
+        if not webhook_url:
+            return None, "URL required"
+        
+        try:
+            await bot.set_webhook(webhook_url)
+            return {"ok": True, "url": webhook_url}, None
+        except Exception as e:
+            logger.error(f"Set webhook error: {e}")
+            return None, str(e)
     
-    if not webhook_url:
-        return jsonify({"error": "URL required"}), 400
+    result, error = run_async(_async_set_webhook())
     
-    try:
-        await bot.set_webhook(webhook_url)
-        return jsonify({"ok": True, "url": webhook_url})
-    except Exception as e:
-        logger.error(f"Set webhook error: {e}")
-        return jsonify({"error": str(e)}), 500
+    if error:
+        return jsonify({"error": error}), 400 if error == "URL required" else 500
+    
+    return jsonify(result)
 
 # Startup
 async def on_startup():

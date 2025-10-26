@@ -175,8 +175,7 @@ async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
     
     until = None
     if days:
-        until_date = datetime.now() + timedelta(days=days)
-        until = until_date.isoformat()
+        until = datetime.now() + timedelta(days=days)
     
     await db.update_subscription(user['id'], True, sub_type, until)
     
@@ -184,7 +183,7 @@ async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
         "success": True,
         "message": f"Підписку виданo користувачу {user['full_name']}",
         "subscription_type": sub_type,
-        "subscription_until": until
+        "subscription_until": until.isoformat() if until else None
     }
 
 
@@ -193,7 +192,15 @@ async def update_subscription_admin(user_id: int, active: bool, sub_type: str, u
     """
     Update user subscription (ADMIN ONLY)
     """
-    await db.update_subscription(user_id, active, sub_type, until)
+    # Convert string to datetime if provided
+    until_dt = None
+    if until:
+        try:
+            until_dt = datetime.fromisoformat(until)
+        except:
+            raise HTTPException(status_code=400, detail="Невірний формат дати")
+    
+    await db.update_subscription(user_id, active, sub_type, until_dt)
     
     return {
         "success": True,

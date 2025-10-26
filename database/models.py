@@ -290,7 +290,7 @@ class Database:
                 await db.commit()
 
     async def update_subscription(self, user_id: int, active: bool, 
-                                 sub_type: str, until: Optional[str] = None):
+                                 sub_type: str, until: Optional[datetime] = None):
         """Update user subscription"""
         if self.is_postgres:
             await self.connect()
@@ -304,13 +304,14 @@ class Database:
                 """, active, sub_type, until, now, user_id)
         else:
             now = datetime.now().isoformat()  # string for SQLite
+            until_str = until.isoformat() if until else None  # convert datetime to string for SQLite
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     UPDATE users 
                     SET subscription_active = ?, subscription_type = ?, 
                         subscription_until = ?, updated_at = ?
                     WHERE id = ?
-                    """, (active, sub_type, until, now, user_id))
+                    """, (active, sub_type, until_str, now, user_id))
                 await db.commit()
 
     async def get_all_users(self) -> List[Dict[str, Any]]:
