@@ -111,13 +111,8 @@ async def get_user_data(login: str):
     if not user:
         raise HTTPException(status_code=404, detail="Користувач не знайдений")
     
-<<<<<<< HEAD
     # photo_path now contains Cloudinary URL
     photo_url = user.get('photo_path')
-=======
-    # Construct photo URL if exists
-    photo_url = user.get('photo_url')
->>>>>>> fc3f77f8e72d26fd8547e579079423bca689694d
     
     return UserDataResponse(
         full_name=user['full_name'],
@@ -144,6 +139,32 @@ async def get_user_photo(user_id: int):
     
     # Redirect to Cloudinary URL
     return RedirectResponse(url=user['photo_path'])
+
+
+@app.post("/api/admin/grant-subscription")
+async def grant_subscription_admin(login: str, sub_type: str, days: int = None):
+    """
+    Grant subscription to user (ADMIN ONLY - add auth later)
+    """
+    from datetime import timedelta
+    
+    user = await db.get_user_by_login(login)
+    if not user:
+        raise HTTPException(status_code=404, detail="Користувач не знайдений")
+    
+    until = None
+    if days:
+        until_date = datetime.now() + timedelta(days=days)
+        until = until_date.isoformat()
+    
+    await db.update_subscription(user['id'], True, sub_type, until)
+    
+    return {
+        "success": True,
+        "message": f"Підписку виданo користувачу {user['full_name']}",
+        "subscription_type": sub_type,
+        "subscription_until": until
+    }
 
 
 @app.get("/api/health")
