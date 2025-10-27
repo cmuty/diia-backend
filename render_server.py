@@ -5,6 +5,7 @@ Combines FastAPI API with Telegram Bot Webhook
 import asyncio
 import logging
 import json
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from flask.json.provider import DefaultJSONProvider
@@ -27,6 +28,9 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global event loop for async operations
+loop = None
 
 # Configure Cloudinary
 cloudinary_url = os.getenv("CLOUDINARY_URL")
@@ -72,19 +76,14 @@ async def db_middleware(handler, event, data):
 
 # Helper function to run async code in sync context
 def run_async(coro):
-    """Run async coroutine in sync context"""
-    try:
-        # Try to get the existing event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Event loop is closed")
-    except RuntimeError:
-        # Create a new event loop if none exists or if it's closed
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
-    # Run the coroutine
-    return loop.run_until_complete(coro)
+    """Run async coroutine in background event loop"""
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
+
+def start_background_loop(loop):
+    """Start the event loop in a background thread"""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
 # Initialize database
 async def init_db():
@@ -393,7 +392,7 @@ def set_webhook_endpoint():
 async def on_startup():
     """Initialize on startup"""
     await init_db()
-    logger.info("Database initialized")
+    logger.info("✅ Database initialized")
 
 # Aiohttp app for webhook
 async def create_webhook_app():
@@ -410,11 +409,28 @@ async def create_webhook_app():
     app.router.add_post("/webhook", webhook_handler)
     return app
 
-# Main function for Render
+# Initialize background event loop and database when module is loaded (for gunicorn)
+def init_app():
+    """Initialize event loop and database"""
+    global loop
+    if loop is None:
+        logger.info("🚀 Initializing background event loop...")
+        # Create a new event loop for background tasks
+        loop = asyncio.new_event_loop()
+        
+        # Start the event loop in a background thread
+        threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+        
+        # Initialize database in the background loop
+        logger.info("📊 Initializing database...")
+        asyncio.run_coroutine_threadsafe(on_startup(), loop).result()
+        logger.info("✅ Application initialized successfully!")
+
+# Initialize on module load
+init_app()
+
+# Main function for Render (for local development with python server.py)
 if __name__ == "__main__":
-    # Initialize on startup
-    asyncio.run(on_startup())
-    
     # Get port from environment (Render provides this)
     port = int(os.getenv("PORT", 8000))
     
