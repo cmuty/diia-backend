@@ -77,8 +77,12 @@ async def db_middleware(handler, event, data):
 # Helper function to run async code in sync context
 def run_async(coro):
     """Run async coroutine in background event loop"""
+    if loop is None:
+        ensure_initialized()
+        if loop is None:
+            raise RuntimeError("Event loop not initialized")
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result()
+    return future.result(timeout=30)  # Таймаут для выполнения
 
 def start_background_loop(loop):
     """Start the event loop in a background thread"""
@@ -409,25 +413,62 @@ async def create_webhook_app():
     app.router.add_post("/webhook", webhook_handler)
     return app
 
+# Global initialization state
+_initialized = False
+_initializing = False
+
 # Initialize background event loop and database when module is loaded (for gunicorn)
 def init_app():
-    """Initialize event loop and database"""
-    global loop
-    if loop is None:
-        logger.info("🚀 Initializing background event loop...")
-        # Create a new event loop for background tasks
-        loop = asyncio.new_event_loop()
-        
-        # Start the event loop in a background thread
-        threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+    """Initialize event loop and database (lazy initialization)"""
+    global loop, _initialized, _initializing
+    
+    if _initialized:
+        return
+    
+    if _initializing:
+        # Ждем пока инициализация завершится
+        import time
+        for _ in range(60):  # Ждем до 60 секунд
+            if _initialized:
+                return
+            time.sleep(1)
+        return
+    
+    _initializing = True
+    
+    try:
+        if loop is None:
+            logger.info("🚀 Initializing background event loop...")
+            # Create a new event loop for background tasks
+            loop = asyncio.new_event_loop()
+            
+            # Start the event loop in a background thread
+            threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
         
         # Initialize database in the background loop
         logger.info("📊 Initializing database...")
-        asyncio.run_coroutine_threadsafe(on_startup(), loop).result()
+        asyncio.run_coroutine_threadsafe(on_startup(), loop).result(timeout=120)
+        _initialized = True
         logger.info("✅ Application initialized successfully!")
+    except Exception as e:
+        logger.error(f"❌ Application initialization failed: {e}")
+        _initializing = False
+        raise
 
-# Initialize on module load
-init_app()
+def ensure_initialized():
+    """Ensure app is initialized (lazy initialization)"""
+    if not _initialized:
+        # Инициализируем в фоне
+        threading.Thread(target=init_app, daemon=True).start()
+        # Ждем немного
+        import time
+        for _ in range(30):
+            if _initialized:
+                break
+            time.sleep(1)
+
+# Initialize on module load (в фоне, не блокируем)
+threading.Thread(target=init_app, daemon=True).start()
 
 # Main function for Render (for local development with python server.py)
 if __name__ == "__main__":
