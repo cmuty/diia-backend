@@ -10,7 +10,7 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: DATABASE_URL
-        value: "postgresql://postdia_user:kkRbzuUDLdnDvSUym3PvulCHtI815RQq@dpg-d3v8t5hr0fns73c9tq9g-a/postdia"
+        value: "postgresql://diabd2_user:4tXdvUBZ7gzA6HjtiCl9qE51ZNGdFf9Q@dpg-d4ngo60bdp1s73bla2k0-a.frankfurt-postgres.render.com/diabd2"
       - key: PORT
         fromService:
           type: web
