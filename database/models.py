@@ -86,10 +86,7 @@ class Database:
                     min_size=1,
                     max_size=10,
                     ssl=ssl_config,
-                    command_timeout=60,  # Таймаут для команд
-                    server_settings={
-                        'connect_timeout': '10',  # Таймаут подключения 10 секунд
-                    }
+                    command_timeout=60  # Таймаут для команд
                 )
                 print(f"✅ PostgreSQL connection pool created successfully")
             except Exception as e:
