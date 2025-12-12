@@ -76,14 +76,33 @@ async def db_middleware(handler, event, data):
 
 # Helper function to run async code in sync context
 def run_async(coro):
-    """Run async coroutine - используем новый event loop для каждого запроса"""
+    """Run async coroutine in background event loop"""
+    global loop, _initialized
+    
+    # Убеждаемся, что event loop инициализирован
+    if loop is None:
+        ensure_initialized()
+        # Ждем инициализации
+        import time
+        for _ in range(10):  # Ждем до 10 секунд
+            if loop is not None:
+                break
+            time.sleep(1)
+        
+        if loop is None:
+            raise RuntimeError("Event loop not initialized")
+    
     try:
-        logger.debug(f"🔄 Running async operation with new event loop...")
-        # Используем asyncio.run() для создания нового event loop для каждого запроса
-        # Это более надежно, чем использование фонового event loop
-        result = asyncio.run(coro)
+        logger.debug(f"🔄 Running async operation in event loop...")
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        logger.debug(f"⏳ Waiting for async operation to complete (timeout: 30s)...")
+        result = future.result(timeout=30)
         logger.debug(f"✅ Async operation completed")
         return result
+    except TimeoutError as e:
+        logger.error(f"❌ Timeout waiting for async operation (30s exceeded)")
+        logger.error(f"Operation: {coro}")
+        raise
     except Exception as e:
         logger.error(f"❌ Error in run_async: {e}")
         import traceback
@@ -165,12 +184,12 @@ def api_login():
             
             logger.info(f"Login attempt for: {login}")
             
-            # Инициализируем базу данных, если нужно
+            # Проверяем, что база данных подключена
             if db.is_postgres:
-                logger.info(f"Initializing database connection...")
-                await db.init_db()  # Инициализируем таблицы, если нужно
-                await db.connect()  # Подключаемся к базе данных
-                logger.info(f"Database connection ready")
+                if not db.pool:
+                    logger.info(f"Database pool not initialized, connecting...")
+                    await db.connect()
+                logger.info(f"Database pool ready")
             
             # Get user by login
             logger.info(f"Querying database for user: {login}")
