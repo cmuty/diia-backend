@@ -76,38 +76,14 @@ async def db_middleware(handler, event, data):
 
 # Helper function to run async code in sync context
 def run_async(coro):
-    """Run async coroutine in background event loop"""
-    global loop, _initialized
-    
-    # Убеждаемся, что event loop инициализирован
-    if loop is None:
-        ensure_initialized()
-        # Ждем инициализации
-        import time
-        for _ in range(10):  # Ждем до 10 секунд
-            if loop is not None:
-                break
-            time.sleep(1)
-        
-        if loop is None:
-            raise RuntimeError("Event loop not initialized")
-    
+    """Run async coroutine - используем новый event loop для каждого запроса"""
     try:
-        # Проверяем состояние event loop
-        if loop.is_closed():
-            logger.error("❌ Event loop is closed!")
-            raise RuntimeError("Event loop is closed")
-        
-        logger.info(f"🔄 Running async operation in event loop (loop running: {loop.is_running()}, closed: {loop.is_closed()})...")
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        logger.info(f"⏳ Waiting for async operation to complete (timeout: 30s)...")
-        result = future.result(timeout=30)
+        logger.info(f"🔄 Running async operation with new event loop...")
+        # Используем asyncio.run() для создания нового event loop для каждого запроса
+        # Это более надежно, чем использование фонового event loop
+        result = asyncio.run(coro)
         logger.info(f"✅ Async operation completed")
         return result
-    except TimeoutError as e:
-        logger.error(f"❌ Timeout waiting for async operation (30s exceeded)")
-        logger.error(f"Operation: {coro}")
-        raise
     except Exception as e:
         logger.error(f"❌ Error in run_async: {e}")
         import traceback
@@ -194,18 +170,18 @@ def api_login():
             logger.info(f"Login attempt for: {login}")
             print(f"🔵 [ASYNC] Login attempt for: {login}")
             
-            # Всегда переподключаемся к базе данных в текущем event loop
-            # Проблема: пул соединений создан в одном event loop, а используется в другом
+            # Подключаемся к базе данных в текущем event loop
             if db.is_postgres:
-                logger.info(f"Reconnecting to database in current event loop...")
-                print(f"🔵 [ASYNC] Reconnecting to database in current event loop...")
+                logger.info(f"Connecting to database in current event loop...")
+                print(f"🔵 [ASYNC] Connecting to database in current event loop...")
                 # Закрываем старый пул, если есть
-                if db.pool and not db.pool.is_closing():
+                if db.pool:
                     try:
-                        await db.pool.close()
-                    except:
-                        pass
-                db.pool = None
+                        if not db.pool.is_closing():
+                            await db.pool.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing old pool: {e}")
+                    db.pool = None
                 # Создаем новый пул в текущем event loop
                 await db.connect()
                 logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
@@ -349,17 +325,18 @@ def api_get_photo(user_id):
     async def _async_get_photo():
         logger.info(f"🔍 Getting photo for user_id: {user_id}")
         
-        # Всегда переподключаемся к базе данных в текущем event loop
+        # Подключаемся к базе данных в текущем event loop
         if db.is_postgres:
-            logger.info(f"Reconnecting to database in current event loop for photo...")
-            print(f"🔵 [ASYNC] Reconnecting to database in current event loop for photo...")
+            logger.info(f"Connecting to database in current event loop for photo...")
+            print(f"🔵 [ASYNC] Connecting to database in current event loop for photo...")
             # Закрываем старый пул, если есть
-            if db.pool and not db.pool.is_closing():
+            if db.pool:
                 try:
-                    await db.pool.close()
-                except:
-                    pass
-            db.pool = None
+                    if not db.pool.is_closing():
+                        await db.pool.close()
+                except Exception as e:
+                    logger.warning(f"Error closing old pool: {e}")
+                db.pool = None
             # Создаем новый пул в текущем event loop
             await db.connect()
             logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
