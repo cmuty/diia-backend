@@ -93,11 +93,16 @@ def run_async(coro):
             raise RuntimeError("Event loop not initialized")
     
     try:
-        logger.debug(f"🔄 Running async operation in event loop...")
+        # Проверяем состояние event loop
+        if loop.is_closed():
+            logger.error("❌ Event loop is closed!")
+            raise RuntimeError("Event loop is closed")
+        
+        logger.info(f"🔄 Running async operation in event loop (loop running: {loop.is_running()}, closed: {loop.is_closed()})...")
         future = asyncio.run_coroutine_threadsafe(coro, loop)
-        logger.debug(f"⏳ Waiting for async operation to complete (timeout: 30s)...")
+        logger.info(f"⏳ Waiting for async operation to complete (timeout: 30s)...")
         result = future.result(timeout=30)
-        logger.debug(f"✅ Async operation completed")
+        logger.info(f"✅ Async operation completed")
         return result
     except TimeoutError as e:
         logger.error(f"❌ Timeout waiting for async operation (30s exceeded)")
@@ -115,6 +120,10 @@ def start_background_loop(loop):
         logger.info("🔄 Starting event loop in background thread...")
         asyncio.set_event_loop(loop)
         logger.info("✅ Event loop set, starting run_forever...")
+        # Проверяем, что loop не закрыт
+        if loop.is_closed():
+            logger.error("❌ Event loop is closed!")
+            return
         loop.run_forever()
     except Exception as e:
         logger.error(f"❌ Error in event loop: {e}")
@@ -186,10 +195,14 @@ def api_login():
             
             # Проверяем, что база данных подключена
             if db.is_postgres:
+                logger.info(f"Checking database connection...")
                 if not db.pool:
                     logger.info(f"Database pool not initialized, connecting...")
                     await db.connect()
-                logger.info(f"Database pool ready")
+                elif db.pool.is_closing():
+                    logger.warning(f"Database pool is closing, reconnecting...")
+                    await db.connect()
+                logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
             
             # Get user by login
             logger.info(f"Querying database for user: {login}")
@@ -325,12 +338,34 @@ def api_get_photo(user_id):
     import requests
     
     async def _async_get_photo():
-        user = await db.get_user_by_id(user_id)
+        logger.info(f"🔍 Getting photo for user_id: {user_id}")
         
-        if not user or not user.get('photo_path'):
+        # Проверяем, что база данных подключена
+        if db.is_postgres:
+            logger.info(f"Checking database connection for photo...")
+            if not db.pool:
+                logger.info(f"Database pool not initialized, connecting...")
+                await db.connect()
+            elif db.pool.is_closing():
+                logger.warning(f"Database pool is closing, reconnecting...")
+                await db.connect()
+            logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
+        
+        logger.info(f"Querying database for user_id: {user_id}")
+        user = await db.get_user_by_id(user_id)
+        logger.info(f"Database query completed")
+        
+        if not user:
+            logger.warning(f"User not found: {user_id}")
             return None
         
-        return user['photo_path']
+        photo_path = user.get('photo_path')
+        if not photo_path:
+            logger.warning(f"User {user_id} has no photo_path")
+            return None
+        
+        logger.info(f"Photo URL found: {photo_path[:50]}...")
+        return photo_path
     
     try:
         photo_url = run_async(_async_get_photo())
