@@ -192,22 +192,30 @@ def api_login():
                 return None, "Логін та пароль обов'язкові"
             
             logger.info(f"Login attempt for: {login}")
+            print(f"🔵 [ASYNC] Login attempt for: {login}")
             
             # Проверяем, что база данных подключена
             if db.is_postgres:
                 logger.info(f"Checking database connection...")
+                print(f"🔵 [ASYNC] Checking database connection...")
                 if not db.pool:
                     logger.info(f"Database pool not initialized, connecting...")
+                    print(f"🔵 [ASYNC] Database pool not initialized, connecting...")
                     await db.connect()
-                elif db.pool.is_closing():
+                    print(f"🔵 [ASYNC] Database connected")
+                elif hasattr(db.pool, 'is_closing') and db.pool.is_closing():
                     logger.warning(f"Database pool is closing, reconnecting...")
+                    print(f"🔵 [ASYNC] Database pool is closing, reconnecting...")
                     await db.connect()
                 logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
+                print(f"🔵 [ASYNC] Database pool ready (pool exists: {db.pool is not None})")
             
             # Get user by login
             logger.info(f"Querying database for user: {login}")
+            print(f"🔵 [ASYNC] Querying database for user: {login}")
             user = await db.get_user_by_login(login)
             logger.info(f"Database query completed for user: {login}")
+            print(f"🔵 [ASYNC] Database query completed for user: {login}")
             
             if not user:
                 logger.warning(f"User not found: {login}")

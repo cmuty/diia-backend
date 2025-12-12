@@ -265,28 +265,33 @@ class Database:
     async def get_user_by_login(self, login: str) -> Optional[Dict[str, Any]]:
         """Get user by login"""
         try:
-            print(f"🔍 get_user_by_login: searching for login='{login}'")
+            print(f"🔍 [DB] get_user_by_login: searching for login='{login}'")
             if self.is_postgres:
-                print(f"📊 PostgreSQL mode, connecting...")
+                print(f"📊 [DB] PostgreSQL mode, connecting...")
                 await self.connect()
+                print(f"📊 [DB] Connect() completed")
                 if not self.pool:
-                    print(f"❌ Connection pool is None!")
+                    print(f"❌ [DB] Connection pool is None!")
                     raise RuntimeError("PostgreSQL connection pool not initialized")
-                print(f"✅ Connection pool ready, acquiring connection...")
-                async with self.pool.acquire() as conn:
-                    print(f"✅ Connection acquired, executing query...")
+                print(f"✅ [DB] Connection pool ready, acquiring connection...")
+                conn = await self.pool.acquire()
+                print(f"✅ [DB] Connection acquired, executing query...")
+                try:
                     row = await conn.fetchrow("SELECT * FROM users WHERE login = $1", login)
-                    print(f"✅ Query executed, result: {'found' if row else 'not found'}")
+                    print(f"✅ [DB] Query executed, result: {'found' if row else 'not found'}")
                     return dict(row) if row else None
+                finally:
+                    await self.pool.release(conn)
+                    print(f"✅ [DB] Connection released")
             else:
-                print(f"📁 SQLite mode")
+                print(f"📁 [DB] SQLite mode")
                 async with aiosqlite.connect(self.db_path) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute("SELECT * FROM users WHERE login = ?", (login,)) as cursor:
                         row = await cursor.fetchone()
                         return dict(row) if row else None
         except Exception as e:
-            print(f"❌ Error in get_user_by_login: {e}")
+            print(f"❌ [DB] Error in get_user_by_login: {e}")
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
             raise
