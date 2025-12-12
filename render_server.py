@@ -110,54 +110,83 @@ def keep_alive():
 def api_login():
     """Authenticate user"""
     async def _async_login():
-        data = request.json
-        login = data.get("login")
-        password = data.get("password")
-        
-        logger.info(f"Login attempt for: {login}")
-        
-        # Get user by login
-        user = await db.get_user_by_login(login)
-        
-        if not user:
-            logger.warning(f"User not found: {login}")
-            return None, "Невірний логін або пароль"
-        
-        logger.info(f"User found: {login}, verifying password...")
-        
-        # Verify password
-        password_valid = await db.verify_password(user['password_hash'], password)
-        
-        if not password_valid:
-            logger.warning(f"Invalid password for user: {login}")
-            return None, "Невірний логін або пароль"
-        
-        logger.info(f"Login successful for: {login}")
-        
-        # Update last login
-        await db.update_last_login(user['id'])
-        
-        # Convert datetime objects to strings
-        last_login = user['last_login']
-        if isinstance(last_login, datetime):
-            last_login = last_login.isoformat()
-        
-        registered_at = user['registered_at']
-        if isinstance(registered_at, datetime):
-            registered_at = registered_at.isoformat()
-        
-        user_safe = {
-            "id": user['id'],
-            "full_name": user['full_name'],
-            "birth_date": user['birth_date'],
-            "login": user['login'],
-            "subscription_active": bool(user['subscription_active']),
-            "subscription_type": user['subscription_type'],
-            "last_login": last_login,
-            "registered_at": registered_at
-        }
-        
-        return user_safe, None
+        try:
+            data = request.json
+            if not data:
+                logger.error("No JSON data in request")
+                return None, "Невірний формат запиту"
+            
+            login = data.get("login")
+            password = data.get("password")
+            
+            if not login or not password:
+                logger.error(f"Missing login or password. Login: {login}, Password: {'*' * len(password) if password else 'None'}")
+                return None, "Логін та пароль обов'язкові"
+            
+            logger.info(f"Login attempt for: {login}")
+            
+            # Get user by login
+            logger.info(f"Querying database for user: {login}")
+            user = await db.get_user_by_login(login)
+            
+            if not user:
+                logger.warning(f"User not found: {login}")
+                return None, "Невірний логін або пароль"
+            
+            logger.info(f"User found: {login}, ID: {user.get('id')}, verifying password...")
+            
+            # Check if password_hash exists
+            password_hash = user.get('password_hash')
+            if not password_hash:
+                logger.error(f"User {login} has no password_hash!")
+                return None, "Помилка: користувач не має паролю"
+            
+            # Verify password
+            logger.info(f"Verifying password for user: {login}")
+            password_valid = await db.verify_password(password_hash, password)
+            
+            if not password_valid:
+                logger.warning(f"Invalid password for user: {login}")
+                return None, "Невірний логін або пароль"
+            
+            logger.info(f"Login successful for: {login}")
+            
+            # Update last login
+            try:
+                await db.update_last_login(user['id'])
+            except Exception as e:
+                logger.warning(f"Failed to update last_login: {e}")
+            
+            # Convert datetime objects to strings
+            last_login = user.get('last_login')
+            if isinstance(last_login, datetime):
+                last_login = last_login.isoformat()
+            elif last_login is None:
+                last_login = None
+            
+            registered_at = user.get('registered_at')
+            if isinstance(registered_at, datetime):
+                registered_at = registered_at.isoformat()
+            elif registered_at is None:
+                registered_at = None
+            
+            user_safe = {
+                "id": user['id'],
+                "full_name": user.get('full_name', ''),
+                "birth_date": user.get('birth_date', ''),
+                "login": user.get('login', ''),
+                "subscription_active": bool(user.get('subscription_active', False)),
+                "subscription_type": user.get('subscription_type', 'none'),
+                "last_login": last_login,
+                "registered_at": registered_at
+            }
+            
+            return user_safe, None
+        except Exception as e:
+            import traceback
+            logger.error(f"Error in _async_login: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
     
     try:
         user_safe, error = run_async(_async_login())
@@ -175,8 +204,10 @@ def api_login():
         })
             
     except Exception as e:
+        import traceback
         logger.error(f"Login error: {e}")
-        return jsonify({"success": False, "message": "Помилка сервера"}), 500
+        logger.error(f"Login error traceback: {traceback.format_exc()}")
+        return jsonify({"success": False, "message": f"Помилка сервера: {str(e)}"}), 500
 
 @flask_app.route("/api/user/<login>", methods=["GET"])
 def api_get_user(login):

@@ -21,6 +21,7 @@ class Database:
         """
         self.db_url = db_url or os.getenv("DATABASE_URL", "database/diia.db")
         self.is_postgres = self.db_url.startswith("postgresql://") or self.db_url.startswith("postgres://")
+        print(f"📊 Database URL: {self.db_url[:50]}... (PostgreSQL: {self.is_postgres})")
         
         if not self.is_postgres:
             # SQLite path
@@ -37,7 +38,13 @@ class Database:
     async def connect(self):
         """Create connection pool for PostgreSQL"""
         if self.is_postgres and not self.pool:
-            self.pool = await asyncpg.create_pool(self.db_url, min_size=1, max_size=10)
+            try:
+                print(f"🔌 Connecting to PostgreSQL...")
+                self.pool = await asyncpg.create_pool(self.db_url, min_size=1, max_size=10)
+                print(f"✅ PostgreSQL connection pool created")
+            except Exception as e:
+                print(f"❌ Failed to connect to PostgreSQL: {e}")
+                raise
     
     async def close(self):
         """Close connection pool"""
@@ -210,6 +217,8 @@ class Database:
         """Get user by login"""
         if self.is_postgres:
             await self.connect()
+            if not self.pool:
+                raise RuntimeError("PostgreSQL connection pool not initialized")
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow("SELECT * FROM users WHERE login = $1", login)
                 return dict(row) if row else None
@@ -441,7 +450,16 @@ class Database:
 
     async def verify_password(self, stored_hash: str, password: str) -> bool:
         """Verify password against stored hash"""
-        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        try:
+            if not stored_hash or not password:
+                print(f"❌ verify_password: stored_hash or password is empty")
+                return False
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        except Exception as e:
+            print(f"❌ verify_password error: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return False
 
     async def login_exists(self, login: str) -> bool:
         """Check if login already exists"""
