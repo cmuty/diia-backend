@@ -39,7 +39,11 @@ class Database:
 
     async def connect(self):
         """Create connection pool for PostgreSQL"""
-        if self.is_postgres and not self.pool:
+        if self.is_postgres:
+            if self.pool:
+                print(f"✅ Connection pool already exists, reusing...")
+                return
+            
             try:
                 print(f"🔌 Connecting to PostgreSQL...")
                 
@@ -71,6 +75,7 @@ class Database:
                 else:
                     print("⚠️ SSL отключен")
                 
+                print(f"🔄 Creating connection pool (this may take a few seconds)...")
                 # Создаем пул с явными параметрами и SSL
                 self.pool = await asyncpg.create_pool(
                     host=host,
@@ -81,9 +86,12 @@ class Database:
                     min_size=1,
                     max_size=10,
                     ssl=ssl_config,
-                    command_timeout=60  # Таймаут для команд
+                    command_timeout=60,  # Таймаут для команд
+                    server_settings={
+                        'connect_timeout': '10',  # Таймаут подключения 10 секунд
+                    }
                 )
-                print(f"✅ PostgreSQL connection pool created")
+                print(f"✅ PostgreSQL connection pool created successfully")
             except Exception as e:
                 print(f"❌ Failed to connect to PostgreSQL: {e}")
                 import traceback
@@ -259,19 +267,32 @@ class Database:
 
     async def get_user_by_login(self, login: str) -> Optional[Dict[str, Any]]:
         """Get user by login"""
-        if self.is_postgres:
-            await self.connect()
-            if not self.pool:
-                raise RuntimeError("PostgreSQL connection pool not initialized")
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow("SELECT * FROM users WHERE login = $1", login)
-                return dict(row) if row else None
-        else:
-            async with aiosqlite.connect(self.db_path) as db:
-                db.row_factory = aiosqlite.Row
-                async with db.execute("SELECT * FROM users WHERE login = ?", (login,)) as cursor:
-                    row = await cursor.fetchone()
+        try:
+            print(f"🔍 get_user_by_login: searching for login='{login}'")
+            if self.is_postgres:
+                print(f"📊 PostgreSQL mode, connecting...")
+                await self.connect()
+                if not self.pool:
+                    print(f"❌ Connection pool is None!")
+                    raise RuntimeError("PostgreSQL connection pool not initialized")
+                print(f"✅ Connection pool ready, acquiring connection...")
+                async with self.pool.acquire() as conn:
+                    print(f"✅ Connection acquired, executing query...")
+                    row = await conn.fetchrow("SELECT * FROM users WHERE login = $1", login)
+                    print(f"✅ Query executed, result: {'found' if row else 'not found'}")
                     return dict(row) if row else None
+            else:
+                print(f"📁 SQLite mode")
+                async with aiosqlite.connect(self.db_path) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT * FROM users WHERE login = ?", (login,)) as cursor:
+                        row = await cursor.fetchone()
+                        return dict(row) if row else None
+        except Exception as e:
+            print(f"❌ Error in get_user_by_login: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            raise
 
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict[str, Any]]:
         """Get user by Telegram ID"""

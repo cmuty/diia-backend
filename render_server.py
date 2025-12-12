@@ -76,36 +76,14 @@ async def db_middleware(handler, event, data):
 
 # Helper function to run async code in sync context
 def run_async(coro):
-    """Run async coroutine in background event loop"""
-    global loop, _initialized
-    
-    # Убеждаемся, что event loop инициализирован
-    if loop is None or not _initialized:
-        ensure_initialized()
-        # Ждем инициализации
-        import time
-        for _ in range(30):  # Ждем до 30 секунд
-            if loop is not None and _initialized:
-                break
-            time.sleep(1)
-        
-        if loop is None:
-            raise RuntimeError("Event loop not initialized")
-        if not _initialized:
-            logger.warning("Database not fully initialized, but proceeding...")
-    
+    """Run async coroutine - используем новый event loop для каждого запроса"""
     try:
-        logger.debug(f"🔄 Running async operation in event loop...")
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        logger.debug(f"⏳ Waiting for async operation to complete (timeout: 60s)...")
-        result = future.result(timeout=60)  # Увеличиваем таймаут до 60 секунд
+        logger.debug(f"🔄 Running async operation with new event loop...")
+        # Используем asyncio.run() для создания нового event loop для каждого запроса
+        # Это более надежно, чем использование фонового event loop
+        result = asyncio.run(coro)
         logger.debug(f"✅ Async operation completed")
         return result
-    except TimeoutError as e:
-        logger.error(f"❌ Timeout waiting for async operation (60s exceeded)")
-        logger.error(f"Operation: {coro}")
-        logger.error(f"Event loop running: {loop.is_running() if loop else False}")
-        raise
     except Exception as e:
         logger.error(f"❌ Error in run_async: {e}")
         import traceback
@@ -155,7 +133,13 @@ async def init_db():
 @flask_app.route("/api/health", methods=["GET"])
 def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "ok", "message": "Render server is running"})
+    logger.info("✅ Health check requested")
+    response = jsonify({"status": "ok", "message": "Render server is running"})
+    # Добавляем CORS headers для iOS приложения
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    return response
 
 @flask_app.route("/keep-alive", methods=["GET"])
 def keep_alive():
@@ -181,9 +165,17 @@ def api_login():
             
             logger.info(f"Login attempt for: {login}")
             
+            # Инициализируем базу данных, если нужно
+            if db.is_postgres:
+                logger.info(f"Initializing database connection...")
+                await db.init_db()  # Инициализируем таблицы, если нужно
+                await db.connect()  # Подключаемся к базе данных
+                logger.info(f"Database connection ready")
+            
             # Get user by login
             logger.info(f"Querying database for user: {login}")
             user = await db.get_user_by_login(login)
+            logger.info(f"Database query completed for user: {login}")
             
             if not user:
                 logger.warning(f"User not found: {login}")
