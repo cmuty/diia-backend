@@ -77,23 +77,79 @@ async def db_middleware(handler, event, data):
 # Helper function to run async code in sync context
 def run_async(coro):
     """Run async coroutine in background event loop"""
-    if loop is None:
+    global loop, _initialized
+    
+    # Убеждаемся, что event loop инициализирован
+    if loop is None or not _initialized:
         ensure_initialized()
+        # Ждем инициализации
+        import time
+        for _ in range(30):  # Ждем до 30 секунд
+            if loop is not None and _initialized:
+                break
+            time.sleep(1)
+        
         if loop is None:
             raise RuntimeError("Event loop not initialized")
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=30)  # Таймаут для выполнения
+        if not _initialized:
+            logger.warning("Database not fully initialized, but proceeding...")
+    
+    try:
+        logger.debug(f"🔄 Running async operation in event loop...")
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        logger.debug(f"⏳ Waiting for async operation to complete (timeout: 60s)...")
+        result = future.result(timeout=60)  # Увеличиваем таймаут до 60 секунд
+        logger.debug(f"✅ Async operation completed")
+        return result
+    except TimeoutError as e:
+        logger.error(f"❌ Timeout waiting for async operation (60s exceeded)")
+        logger.error(f"Operation: {coro}")
+        logger.error(f"Event loop running: {loop.is_running() if loop else False}")
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in run_async: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 def start_background_loop(loop):
     """Start the event loop in a background thread"""
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
+    try:
+        logger.info("🔄 Starting event loop in background thread...")
+        asyncio.set_event_loop(loop)
+        logger.info("✅ Event loop set, starting run_forever...")
+        loop.run_forever()
+    except Exception as e:
+        logger.error(f"❌ Error in event loop: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Initialize database
 async def init_db():
     """Initialize database"""
-    os.makedirs("database", exist_ok=True)
-    await db.init_db()
+    try:
+        logger.info(f"📊 Database URL: {db.db_url[:50]}... (PostgreSQL: {db.is_postgres})")
+        if not db.is_postgres:
+            os.makedirs("database", exist_ok=True)
+        logger.info("🔄 Initializing database tables...")
+        await db.init_db()
+        logger.info("✅ Database tables initialized")
+        
+        # Проверяем подключение к базе данных
+        if db.is_postgres:
+            logger.info("🔌 Testing PostgreSQL connection...")
+            await db.connect()
+            if db.pool:
+                logger.info("✅ PostgreSQL connection pool is ready")
+            else:
+                logger.error("❌ PostgreSQL connection pool is None!")
+        else:
+            logger.info(f"📁 Using SQLite database: {db.db_path}")
+    except Exception as e:
+        logger.error(f"❌ Error initializing database: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 # Flask API endpoints (same as FastAPI)
 @flask_app.route("/api/health", methods=["GET"])
@@ -426,8 +482,15 @@ def set_webhook_endpoint():
 # Startup
 async def on_startup():
     """Initialize on startup"""
-    await init_db()
-    logger.info("✅ Database initialized")
+    try:
+        logger.info("🔄 Starting database initialization...")
+        await init_db()
+        logger.info("✅ Database initialization completed")
+    except Exception as e:
+        logger.error(f"❌ Error in on_startup: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 # Aiohttp app for webhook
 async def create_webhook_app():
@@ -472,15 +535,34 @@ def init_app():
             logger.info("🚀 Initializing background event loop...")
             # Create a new event loop for background tasks
             loop = asyncio.new_event_loop()
+            logger.info("✅ Event loop created")
             
             # Start the event loop in a background thread
-            threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+            thread = threading.Thread(target=start_background_loop, args=(loop,), daemon=True)
+            thread.start()
+            logger.info("✅ Event loop thread started")
+            
+            # Даем event loop время на запуск
+            import time
+            time.sleep(1)
         
         # Initialize database in the background loop
         logger.info("📊 Initializing database...")
-        asyncio.run_coroutine_threadsafe(on_startup(), loop).result(timeout=120)
-        _initialized = True
-        logger.info("✅ Application initialized successfully!")
+        try:
+            # Даем event loop немного времени на запуск
+            import time
+            time.sleep(2)
+            
+            future = asyncio.run_coroutine_threadsafe(on_startup(), loop)
+            future.result(timeout=120)
+            _initialized = True
+            logger.info("✅ Application initialized successfully!")
+        except Exception as e:
+            logger.error(f"❌ Database initialization failed: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            _initializing = False
+            raise
     except Exception as e:
         logger.error(f"❌ Application initialization failed: {e}")
         _initializing = False
@@ -488,15 +570,23 @@ def init_app():
 
 def ensure_initialized():
     """Ensure app is initialized (lazy initialization)"""
-    if not _initialized:
-        # Инициализируем в фоне
-        threading.Thread(target=init_app, daemon=True).start()
-        # Ждем немного
+    global loop, _initialized
+    
+    if _initialized:
+        return
+    
+    if _initializing:
+        # Ждем завершения инициализации
         import time
-        for _ in range(30):
+        for _ in range(60):
             if _initialized:
-                break
+                return
             time.sleep(1)
+        return
+    
+    # Инициализируем синхронно, если еще не начали
+    if not _initializing:
+        init_app()
 
 # Initialize on module load (в фоне, не блокируем)
 threading.Thread(target=init_app, daemon=True).start()
