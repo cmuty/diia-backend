@@ -321,8 +321,8 @@ def api_get_user(login):
 
 @flask_app.route("/api/photo/<int:user_id>", methods=["GET"])
 def api_get_photo(user_id):
-    """Get user photo URL (redirect to Cloudinary)"""
-    from flask import redirect
+    """Get user photo - загружаем с Cloudinary и возвращаем данные"""
+    import requests
     
     async def _async_get_photo():
         user = await db.get_user_by_id(user_id)
@@ -336,13 +336,34 @@ def api_get_photo(user_id):
         photo_url = run_async(_async_get_photo())
         
         if not photo_url:
+            logger.warning(f"Photo not found for user_id: {user_id}")
             return jsonify({"error": "Фото не знайдено"}), 404
         
-        # Redirect to Cloudinary URL
-        return redirect(photo_url)
+        logger.info(f"Loading photo from Cloudinary: {photo_url[:50]}...")
+        
+        # Загружаем фото с Cloudinary
+        try:
+            response = requests.get(photo_url, timeout=10)
+            response.raise_for_status()
+            
+            # Возвращаем данные фото с правильными headers
+            from flask import Response
+            return Response(
+                response.content,
+                mimetype=response.headers.get('Content-Type', 'image/jpeg'),
+                headers={
+                    'Cache-Control': 'public, max-age=3600',
+                    'Content-Length': str(len(response.content))
+                }
+            )
+        except requests.RequestException as e:
+            logger.error(f"Failed to load photo from Cloudinary: {e}")
+            return jsonify({"error": "Не вдалося завантажити фото"}), 500
         
     except Exception as e:
         logger.error(f"Get photo error: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": "Помилка сервера"}), 500
 
 # Admin endpoints
