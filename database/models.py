@@ -40,9 +40,21 @@ class Database:
     async def connect(self):
         """Create connection pool for PostgreSQL"""
         if self.is_postgres:
-            if self.pool:
-                print(f"✅ Connection pool already exists, reusing...")
-                return
+            # Проверяем, существует ли пул и не закрыт ли он
+            if self.pool and not self.pool.is_closing():
+                try:
+                    # Проверяем, что пул работает
+                    async with self.pool.acquire() as conn:
+                        await conn.fetchval("SELECT 1")
+                    print(f"✅ Connection pool already exists and working, reusing...")
+                    return
+                except Exception as e:
+                    print(f"⚠️ Existing pool is broken, recreating: {e}")
+                    try:
+                        await self.pool.close()
+                    except:
+                        pass
+                    self.pool = None
             
             try:
                 print(f"🔌 Connecting to PostgreSQL...")

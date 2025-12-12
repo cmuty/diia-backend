@@ -194,19 +194,20 @@ def api_login():
             logger.info(f"Login attempt for: {login}")
             print(f"🔵 [ASYNC] Login attempt for: {login}")
             
-            # Проверяем, что база данных подключена
+            # Всегда переподключаемся к базе данных в текущем event loop
+            # Проблема: пул соединений создан в одном event loop, а используется в другом
             if db.is_postgres:
-                logger.info(f"Checking database connection...")
-                print(f"🔵 [ASYNC] Checking database connection...")
-                if not db.pool:
-                    logger.info(f"Database pool not initialized, connecting...")
-                    print(f"🔵 [ASYNC] Database pool not initialized, connecting...")
-                    await db.connect()
-                    print(f"🔵 [ASYNC] Database connected")
-                elif hasattr(db.pool, 'is_closing') and db.pool.is_closing():
-                    logger.warning(f"Database pool is closing, reconnecting...")
-                    print(f"🔵 [ASYNC] Database pool is closing, reconnecting...")
-                    await db.connect()
+                logger.info(f"Reconnecting to database in current event loop...")
+                print(f"🔵 [ASYNC] Reconnecting to database in current event loop...")
+                # Закрываем старый пул, если есть
+                if db.pool and not db.pool.is_closing():
+                    try:
+                        await db.pool.close()
+                    except:
+                        pass
+                db.pool = None
+                # Создаем новый пул в текущем event loop
+                await db.connect()
                 logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
                 print(f"🔵 [ASYNC] Database pool ready (pool exists: {db.pool is not None})")
             
@@ -348,16 +349,21 @@ def api_get_photo(user_id):
     async def _async_get_photo():
         logger.info(f"🔍 Getting photo for user_id: {user_id}")
         
-        # Проверяем, что база данных подключена
+        # Всегда переподключаемся к базе данных в текущем event loop
         if db.is_postgres:
-            logger.info(f"Checking database connection for photo...")
-            if not db.pool:
-                logger.info(f"Database pool not initialized, connecting...")
-                await db.connect()
-            elif db.pool.is_closing():
-                logger.warning(f"Database pool is closing, reconnecting...")
-                await db.connect()
+            logger.info(f"Reconnecting to database in current event loop for photo...")
+            print(f"🔵 [ASYNC] Reconnecting to database in current event loop for photo...")
+            # Закрываем старый пул, если есть
+            if db.pool and not db.pool.is_closing():
+                try:
+                    await db.pool.close()
+                except:
+                    pass
+            db.pool = None
+            # Создаем новый пул в текущем event loop
+            await db.connect()
             logger.info(f"Database pool ready (pool exists: {db.pool is not None})")
+            print(f"🔵 [ASYNC] Database pool ready (pool exists: {db.pool is not None})")
         
         logger.info(f"Querying database for user_id: {user_id}")
         user = await db.get_user_by_id(user_id)
